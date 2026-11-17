@@ -68,13 +68,12 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
 3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Az effektje (`f1a48`) hiányzik.
 4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
-5. **Menük:** a `winfront.c` pontos elrendezése nincs visszafejtve, a pozíciók szemre vannak.
+5. **Menük:** az eredeti front end egy BRender 3D jelenet (`frontend/crshipl1.dat`: 210 modell, pl. forgó opciókockák, nyolcszögek; `demo.mat` anyagok az `align.pix` textúráival; a `0x412a7a` építi fel, egy objektum/trigger szkript mozgatja). A port 2D-s menüi ennek átértelmezései, a pozíciók szemre vannak. A portrék párosítása a `demo.mat` alapján már pontos.
 6. **Folytatás, stáblista, rekordtábla, FMV:** nincs kész.
 7. **Színezés:** a `colmap.tab` árnyalótáblát nem emulálja.
 8. **Háttér:** a függőleges eltolás (`0x4f1b5a`) becsült.
 
 ## Nyitott kérdések (a felhasználótól)
-- A portrék és a harcosok párosítása szemre történt. A PLYR2 = Linna és a PLYR9 = Kwondo bizonytalan.
 - Az ugrás közben tiltott ringből való kiesés saját döntés, nem az eredetiből származik.
 - Egy elrugaszkodás élőben kicsit rántást okozhat (szimulációban látszott).
 

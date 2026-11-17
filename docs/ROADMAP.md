@@ -52,6 +52,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 - Ugrás közben a harcos nem jut ki a ringből (saját döntés); ütés, dobás vagy kilépés után továbbra is ki lehet esni.
 - A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.
 - A kábulás (`f1a48 = 0x17f`, valószínűleg csillag-effekt vagy hang) látványeleme még hiányzik, csak a mechanika van meg.
-- A portrék és a harcosok összerendelése szemre történt; a PLYR2 = Linna és a PLYR9 = Kwondo bizonytalan.
+- A portrék és a harcosok összerendelése a `frontend/demo.mat` anyagaiból jön (pl. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
+- A menük az eredetiben 3D jelenetek (`crshipl1.dat` modellek + `demo.mat` + objektum/trigger szkript, `0x412a7a`, `0x4135f1`); a port 2D-s változatot rajzol.
 - Jerzan (fm12.dat, `pan_cr12`) nem hiba: az eredeti létratáblájában nem szerepel, a modelljének teste szándékosan pontnyira zsugorított. Kimarad a létrából, ahogy az eredetiben.
 - A menük elrendezése az eredeti grafikákra épül, de a pontos pozíciókat (winfront.c) még nem fejtettem vissza.

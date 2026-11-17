@@ -1036,9 +1036,11 @@ static void update_camera(float dt, int snap)
 /*  Front end (winfront.c in the original): title, menu, fighter and   */
 /*  arena select, VS screen, best-of-three matches and the 1P ladder.  */
 /* ================================================================== */
-/* frontend/align.pix portrait of each fighter id (matched by eye; 12 = random "?" cell) */
-static const char *PORTRAIT[13] = { "EMPTY", "MAGNON", "PLYR7", "PLYR10", "PLYR1", "PLYR6", "PLYR5",
-                                    "PLYR4", "PLYR8", "PLYR3", "PLYR2", "PLYR9", "PLYR11" };
+/* frontend/align.pix portrait of each fighter id, from the materials in frontend/demo.mat
+ * (MAGNON->MAGNON, SHEBA->PLYR7, VENAM->PLYR10, JAKE->PLYR1, KIKO->PLYR2, SIREN->PLYR5, ASHRAF->PLYR4,
+ *  CYBEN->PLYR8, RYGIL->PLYR3, LINNA->PLYR6, KWONDO->PLYR9, RANDOM->PLYR11; 12 = random "?" cell) */
+static const char *PORTRAIT[13] = { "EMPTY", "MAGNON", "PLYR7", "PLYR10", "PLYR1", "PLYR2", "PLYR5",
+                                    "PLYR4", "PLYR8", "PLYR3", "PLYR6", "PLYR9", "PLYR11" };
 #define GRID_N    12
 #define GRID_COLS 3
 static const int GRID[GRID_N] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0 };   /* 0 = random */
