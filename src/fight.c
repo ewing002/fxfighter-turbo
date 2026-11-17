@@ -1,0 +1,807 @@
+/*
+ * FX Fighter Turbo - open reimplementation
+ * Fight engine reconstructed from FIGHT.EXE (see fight.h for addresses).
+ */
+#include "fight.h"
+#include "tables.h"
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <stdio.h>
+
+#define MOVE_FALLEN   116      /* 0x4d73e0 - 0x4d6390 / 36 */
+#define MOVE_DEAD     0x61     /* forced when health < 1 */
+#define MOVE_STAND    0
+#define MOVE_VICTORY  1
+#define MOVE_DEFEAT   2
+#define MOVE_RO_STEP  6
+#define MOVE_RO_BACK  7
+#define MOVE_RO_HEAD  9
+#define MOVE_RO_FEET  10
+#define CUR(pl)       ((pl)->cur ? (pl)->cur : (pl)->ms)
+#define TICK_T        (1.0f / 32.0f)   /* movement time step: (ticks/frame) / 32 */
+
+static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+static float rdf32le(const uint8_t *p) { float f; memcpy(&f, p, 4); return f; }
+
+/* ================================================================== */
+/*  Data loading                                                       */
+/* ================================================================== */
+int moveset_load(MoveSet *ms, const uint8_t *h, size_t hsz, const uint8_t *s, size_t ssz)
+{
+    memset(ms, 0, sizeof *ms);
+    if (hsz < 38 || ssz < 12) return 0;
+    ms->nmoves = (int)((hsz - 2) / 36);
+    ms->moves = calloc((size_t)ms->nmoves, sizeof(MoveDef));
+    for (int i = 0; i < ms->nmoves; i++) {
+        const uint8_t *r = h + 2 + i * 36;
+        MoveDef *m = &ms->moves[i];
+        memcpy(m->name, r, 20); m->name[20] = 0;
+        m->limbs = r[20]; m->stance = r[21]; m->cls = r[22]; m->clip = r[23];
+        m->sound = r[24]; m->flags = r[25]; m->cam = r[0x21]; m->state = rd16(r + 34);
+    }
+    ms->nst = (int)(ssz / 12);
+    ms->st = calloc((size_t)ms->nst + 1, sizeof(StateRec));   /* +1: zeroed terminator guard */
+    for (int i = 0; i < ms->nst; i++) {
+        const uint8_t *r = s + i * 12;
+        StateRec *t = &ms->st[i];
+        t->op = r[0]; t->fr = r[1]; t->val = rd16(r + 2); t->mask = rd16(r + 4);
+        t->cond = r[6]; t->minfr = r[7]; t->ctx = r[8]; t->pad = r[9]; t->tgt = (int16_t)rd16(r + 10);
+    }
+    return 1;
+}
+
+void moveset_free(MoveSet *ms) { free(ms->moves); free(ms->st); memset(ms, 0, sizeof *ms); }
+
+int fighter_info_load(FighterInfo *fi, const uint8_t *src, size_t n)
+{
+    memset(fi, 0, sizeof *fi);
+    size_t usz;
+    uint8_t *d = cmp_decode(src, n, &usz);
+    if (!d || usz < 0x98) { free(d); return 0; }
+    for (size_t i = 0; i < usz; i++) d[i] = (uint8_t)(d[i] - 1);
+    memcpy(fi->name, d, 15); memcpy(fi->arena, d + 16, 15);
+    int32_t fd; memcpy(&fd, d + 0x4c, 4);
+    fi->fall_depth = (float)fd / 65536.0f;
+    fi->ring_half = rdf32le(d + 0x54);
+    fi->stun_k = rdf32le(d + 0x58);
+    fi->jump_v = rdf32le(d + 0x6c); fi->jump_g = rdf32le(d + 0x70); fi->jump_s = rdf32le(d + 0x74);
+    for (int k = 0; k < 6; k++) fi->body_r[k] = rdf32le(d + 0x78 + 4 * k);
+    for (int k = 0; k < 16; k++) fi->part_r[k] = (float)d[0x88 + k] / 256.0f;
+    free(d);
+    return 1;
+}
+
+/* ================================================================== */
+/*  Small helpers                                                      */
+/* ================================================================== */
+static int is_term(const StateRec *r) { return r->mask == 0 && r->ctx == 0; }
+
+static const StateRec *rec(const Player *p, int k)
+{
+    const MoveSet *ms = CUR(p);
+    if (k < 0 || k >= ms->nst) return &ms->st[ms->nst];   /* zero record = terminator */
+    return &ms->st[k];
+}
+
+static const AniClip *cur_clip(const Player *p)
+{
+    if (!p->aset || p->clip < 0 || p->clip >= p->aset->nclips) return NULL;
+    return &p->aset->clips[p->clip];
+}
+
+const AniFrame *player_frame(const Player *p)
+{
+    const AniClip *c = cur_clip(p);
+    if (!c || !c->nframes) return NULL;
+    int f = p->frame;
+    if (f < 0) f = 0;
+    if (f >= c->nframes) f = c->nframes - 1;
+    return &c->frames[f];
+}
+
+const char *player_move_name(const Player *p)
+{
+    const MoveSet *ms = CUR(p);
+    return (ms && p->move >= 0 && p->move < ms->nmoves) ? ms->moves[p->move].name : "?";
+}
+
+int player_move_cam(const Player *p)
+{
+    const MoveSet *ms = CUR(p);
+    return (ms && p->move >= 0 && p->move < ms->nmoves) ? ms->moves[p->move].cam : 0;
+}
+
+static const MoveDef *cur_move(const Player *p) { return &CUR(p)->moves[p->move]; }
+
+/* ================================================================== */
+/*  Sound events (FUN_00435eb4)                                        */
+/* ================================================================== */
+static void emit_sound(Fight *f, int bank, int index)
+{
+    if (index <= 0 || f->nsnd >= 32) return;
+    f->snd[f->nsnd].bank = (uint8_t)bank;
+    f->snd[f->nsnd].index = (uint8_t)index;
+    f->nsnd++;
+}
+
+/* fighter sound: < 0x80 the player's own bank (1-based), 0x80.. the arena bank (0-based), >= 0xf0 none */
+static void fighter_sound(Fight *f, int i, int s)
+{
+    if (s <= 0 || s >= 0xf0) return;
+    if (s >= 0x80) emit_sound(f, 3, s - 0x80 + 1);
+    else emit_sound(f, i + 1, s);
+}
+
+/* ================================================================== */
+/*  Geometry: the fight line (a8684) and world placement               */
+/* ================================================================== */
+void fight_line_dir(const Fight *f, float *ux, float *uy) { *ux = cosf(f->ang); *uy = sinf(f->ang); }
+
+static void floor_pos(const Fight *f, int i, float *x, float *y)
+{
+    float ux, uy; fight_line_dir(f, &ux, &uy);
+    *x = f->ox + ux * f->p[i].s;
+    *y = f->oy + uy * f->p[i].s;
+}
+
+/* yaw that turns the fighter-local -Y axis into the look direction face*u */
+static float look_yaw(const Fight *f, int i)
+{
+    float ux, uy; fight_line_dir(f, &ux, &uy);
+    float lx = ux * (float)f->p[i].face, ly = uy * (float)f->p[i].face;
+    return atan2f(lx, -ly);
+}
+
+static float root_x(const Player *p) { const AniFrame *fr = player_frame(p); return fr ? (float)fr->root[0] * ANI_UNIT : 0; }
+static float root_h(const Player *p) { const AniFrame *fr = player_frame(p); return fr ? (float)fr->root[1] * ANI_UNIT : 0; }
+static int   root_fwd(const Player *p) { const AniFrame *fr = player_frame(p); return fr ? fr->root[2] : 0; }
+
+void fight_place(const Fight *f, int i, float *wx, float *wy, float *wz, float *yaw_deg)
+{
+    floor_pos(f, i, wx, wy);
+    *wz = f->p[i].z;
+    *yaw_deg = look_yaw(f, i) * 57.29578f;
+}
+
+void fight_to_world(const Fight *f, int i, const float q[3], float out[3])
+{
+    const Player *p = &f->p[i];
+    float x, y; floor_pos(f, i, &x, &y);
+    float a = look_yaw(f, i), c = cosf(a), s = sinf(a);
+    float lx = q[0] + root_x(p), ly = q[1];
+    out[0] = x + lx * c - ly * s;
+    out[1] = y + lx * s + ly * c;
+    out[2] = q[2] + root_h(p) + p->z;
+}
+
+void fight_joint(const Fight *f, int i, int part, float out[3])
+{
+    const AniFrame *fr = player_frame(&f->p[i]);
+    float m[4][3] = { { 0 } };
+    if (fr) ani_bone_matrix(fr, part, m);
+    fight_to_world(f, i, m[3], out);
+}
+
+static float gap(const Fight *f, int i)          /* signed distance to the opponent along the line */
+{
+    return f->p[i ^ 1].s - f->p[i].s;
+}
+
+/* rotate the fight line by `a` radians around fighter k (0x44998a) */
+static void rotate_line_around(Fight *f, int k, float a)
+{
+    float kx, ky; floor_pos(f, k, &kx, &ky);
+    f->ang += a;
+    float ux, uy; fight_line_dir(f, &ux, &uy);
+    f->ox = kx - ux * f->p[k].s;
+    f->oy = ky - uy * f->p[k].s;
+}
+
+/* Sidestep (0x43e424): at a move change the lateral root offset of the previous
+ * move is turned into a rotation of the fight line around the opponent. */
+static void bake_lateral(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (!p->aset) return;
+    float lat = root_x(p);
+    float d = fabsf(gap(f, i));
+    if (d < 0.05f || fabsf(atan2f(lat, d)) <= 0.02f) return;
+    float c[3] = { 0, 0, 0 }, w[3];
+    fight_to_world(f, i, c, w);                       /* includes the lateral root offset */
+    float ox, oy; floor_pos(f, i ^ 1, &ox, &oy);
+    float dx = w[0] - ox, dy = w[1] - oy, len = sqrtf(dx * dx + dy * dy);
+    if (len < 1e-4f) return;
+    float sg = (p->s - f->p[i ^ 1].s) >= 0 ? 1.f : -1.f;
+    float ux = sg * dx / len, uy = sg * dy / len;
+    f->ang = atan2f(uy, ux);
+    p->s = f->p[i ^ 1].s + sg * len;
+    f->ox = ox - ux * f->p[i ^ 1].s;
+    f->oy = oy - uy * f->p[i ^ 1].s;
+}
+
+/* ================================================================== */
+/*  StartMove (0x43e828)                                               */
+/* ================================================================== */
+static void set_mode_from_op(Fight *f, int i, unsigned op, int at_start)
+{
+    Player *p = &f->p[i];
+    float d = fabsf(gap(f, i));
+    switch (op) {
+    case 0xd0: if (p->mode < 1 || p->mode > 3) p->jt = 0; p->mode = 1; break;
+    case 0xd1: if (p->mode < 1 || p->mode > 3) p->jt = 0; if (p->mode != 2) p->vel = 2.f; p->mode = 2; break;
+    case 0xd2: if (p->mode < 1 || p->mode > 3) p->jt = 0; if (p->mode != 3) p->vel = -2.f; p->mode = 3; break;
+    case 0xd5: if (p->mode != 4) p->vel = d; p->mode = 4; break;
+    case 0xd6: if (p->mode != 5) p->vel = d + 1.f; p->mode = 5; break;
+    case 0xd7: if (p->mode != 6) p->vel = d - 1.f; p->mode = 6; break;
+    default:
+        if (at_start && op != 0xca) { p->mode = 0; p->vel = 0; }   /* height: ground() settles it */
+        break;
+    }
+    if (p->vel > 2.f) p->vel = 2.f;
+    if (p->vel < -2.f) p->vel = -2.f;
+}
+
+/* StartMove(player, move). `owner` selects whose move table / animations are used:
+ * FIGHT.EXE encodes this as player+2 (throw victim plays the thrower's table) and
+ * player^3 (terminator 0xcb: continue with the other player's table). */
+static void start_move_t(Fight *f, int i, int m, int owner)
+{
+    Player *p = &f->p[i];
+    const Player *o = &f->p[owner & 1];
+    const MoveSet *ms = o->ms;
+    if (m < 0 || m >= ms->nmoves) return;
+    if (p->health < 1 && p->move >= 0 && owner == i && p->move < CUR(p)->nmoves &&
+        (p->move == MOVE_FALLEN || cur_move(p)->cls == 3))
+        m = MOVE_DEAD;
+    bake_lateral(f, i);
+    if (p->turn_flag) { p->face = -p->face; p->turn_flag = 0; }
+    p->cur = ms;
+    p->owner = owner & 1;
+    p->move = m;
+    p->sp = ms->moves[m].state;
+    p->cont_hit = 0;
+    p->solid = 1;
+    p->have_prev_box = 0;
+    uint8_t clip = ms->moves[m].clip;
+    if (clip != 0xff) {
+        if (clip >= 200) { p->aset = o->own; p->clip = clip - 200; }
+        else             { p->aset = p->generic; p->clip = clip; }
+        p->frame = rec(p, p->sp)->minfr;
+    }
+    p->last_fwd = root_fwd(p);
+    set_mode_from_op(f, i, rec(p, p->sp)->op, 1);
+    fighter_sound(f, i, ms->moves[m].sound);
+}
+
+static void start_move(Fight *f, int i, int m) { start_move_t(f, i, m, i); }
+
+/* ================================================================== */
+/*  Context bits (0x441b7e / 0x440cbb)                                 */
+/* ================================================================== */
+static int facing_away(const Fight *f, int i)
+{
+    return gap(f, i) * (float)f->p[i].face < 0;
+}
+
+static unsigned ctx_bits(const Fight *f, int i)
+{
+    float dist = fabsf(gap(f, i));
+    unsigned c = dist < f->p[0].radius + f->p[1].radius + 0.29f ? 1u : 0u;
+    if (facing_away(f, i)) c |= 2;
+    if (facing_away(f, i ^ 1)) c |= 4;
+    return c;
+}
+
+static int opp_stance(const Fight *f, int i)
+{
+    return cur_move(&f->p[i ^ 1])->stance & 0x1f;
+}
+
+/* ================================================================== */
+/*  Hit test (0x4491f7)                                                */
+/*  Body parts are cubes around their joint (FUN_004488ab): centre =   */
+/*  translation of the part's world matrix, half size fi[0x88+part]/256 */
+/* ================================================================== */
+static void joint_box(const Fight *f, int i, int part, float mn[3], float mx[3], float c[3])
+{
+    fight_joint(f, i, part, c);
+    float h = f->p[i].fi ? f->p[i].fi->part_r[part & 15] : 0.14f;
+    for (int k = 0; k < 3; k++) { mn[k] = c[k] - h; mx[k] = c[k] + h; }
+}
+
+static int boxes_overlap(const float a0[3], const float a1[3], const float b0[3], const float b1[3])
+{
+    for (int k = 0; k < 3; k++) if (a1[k] <= b0[k] || b1[k] <= a0[k]) return 0;
+    return 1;
+}
+
+static int hit_test(Fight *f, int i, int damage, int dir)
+{
+    Player *a = &f->p[i];
+    if (f->hit_pending[i] || f->p[i ^ 1].ringout) return 0;
+    const MoveDef *md = cur_move(a);
+    int set = md->limbs < 24 ? md->limbs : 0;
+    float amn[3] = { 1e9f, 1e9f, 1e9f }, amx[3] = { -1e9f, -1e9f, -1e9f };
+    for (int k = 1; k <= LIMB_SETS[set][0] && k < 17; k++) {
+        float mn[3], mx[3], c[3];
+        joint_box(f, i, LIMB_SETS[set][k], mn, mx, c);
+        for (int q = 0; q < 3; q++) { if (mn[q] < amn[q]) amn[q] = mn[q]; if (mx[q] > amx[q]) amx[q] = mx[q]; }
+    }
+    /* FUN_004491f7: the box of this check is merged with the one of the previous check of the
+     * same move, so fast limbs sweep through the victim instead of skipping over it */
+    float cur[6] = { amn[0], amn[1], amn[2], amx[0], amx[1], amx[2] };
+    if (a->have_prev_box)
+        for (int q = 0; q < 3; q++) { amn[q] = fminf(amn[q], a->prev_box[q]); amx[q] = fmaxf(amx[q], a->prev_box[3 + q]); }
+    memcpy(a->prev_box, cur, sizeof cur);
+    a->have_prev_box = 1;
+    for (int k = 0; k < 9; k++) {
+        float mn[3], mx[3], c[3];
+        joint_box(f, i ^ 1, VICTIM_PARTS[k], mn, mx, c);
+        if (boxes_overlap(amn, amx, mn, mx)) {
+            f->hit_pending[i] = 1;
+            f->hit_damage[i] = damage;
+            f->hit_dir[i] = dir & 3;
+            /* zone from the bottom of the victim's box, relative to 0x9999 (0.6):
+             * below 0.4 low, below 1.0 mid, else high */
+            f->hit_zone[i] = mn[2] < 0.4f ? 2 : (mn[2] < 1.0f ? 1 : 0);
+            if (getenv("FX_TRACE"))
+                fprintf(stderr, "HIT P%d %s -> part %d zone %d dmg %d\n", i + 1, md->name, VICTIM_PARTS[k], f->hit_zone[i], damage);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int damage_of(const Player *p, int op)
+{
+    /* op * fi[0x40] * fi[0x44] (all 1.0) * difficulty factors (CPU: 1.15 * 0.9 at level 4) */
+    return p->cpu ? (int)((float)op * 1.035f) : op;
+}
+
+/* ================================================================== */
+/*  Event processing (0x441c0b)                                        */
+/* ================================================================== */
+static void process_events(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    for (int guard = 0; guard < 64; guard++) {
+        const StateRec *r = rec(p, p->sp);
+        if (is_term(r) || r->fr > p->frame) break;
+        int move_before = p->move;
+        const MoveSet *ms_before = CUR(p);
+        if (r->cond == 8 && r->op != 0xe9) {
+            /* throw: opponent plays the next record's target from OUR table, we play this one */
+            const StateRec *n = rec(p, p->sp + 1);
+            Player *o = &f->p[i ^ 1];
+            if ((cur_move(o)->stance & 0x3f) != 8 && !o->ringout) {
+                start_move_t(f, i ^ 1, n->tgt, i);
+                start_move(f, i, r->tgt);
+                return;
+            }
+        } else {
+            unsigned op = r->op;
+            if (op > 0 && op < 100) {
+                if (p->cont_hit == 0) hit_test(f, i, damage_of(p, (int)op), r->cond >> 6);
+                else p->cont_hit = (int)op;           /* armed by 0xd4: keep testing every tick */
+                f->hit_dir[i] = (r->cond >> 6) & 3;
+            }
+            else if (op >= 100 && op < 150) p->health -= (int)op - 100;
+            else if (op >= 150 && op < 200) p->health -= (int)op - 150;
+            else if (op >= 0xd0 && op <= 0xd2) set_mode_from_op(f, i, op, 0);
+            else if (op == 0xd4) p->cont_hit = -1;
+            else if (op == 0xd8) p->turn_flag ^= 1;
+            else if (op == 0xd9) p->solid ^= 1;
+            else if (op == 0xde) fighter_sound(f, i, r->tgt);
+            else if (op == 0xdc) { p->health += 30; if (p->health > MAX_HEALTH) p->health = MAX_HEALTH; }
+            else if (op == 0xe0) p->frame = r->fr;
+            else if (op == 0xe8) {                   /* set fighter distance (throws) */
+                float want = (float)((int)r->tgt << 9) / 65536.0f, g = gap(f, i);
+                float diff = (want - fabsf(g)) * 0.5f, sg = g >= 0 ? 1.f : -1.f;
+                p->s -= sg * diff; f->p[i ^ 1].s += sg * diff;
+            }
+            if (p->health < 0) p->health = 0;
+        }
+        if (p->move != move_before || CUR(p) != ms_before) return;
+        p->sp++;
+    }
+}
+
+/* ================================================================== */
+/*  Human / AI input transitions (0x4427c4)                            */
+/* ================================================================== */
+static int input_transitions(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (p->ringout) return 0;
+    unsigned in = p->in & 0x3f, word = ((in ^ (p->prev_in & 0x3f)) | (in << 8)) & 0xffff;
+    unsigned ctx = ctx_bits(f, i);
+    int ost = opp_stance(f, i);
+    for (int k = p->sp, guard = 0; guard < 256; k++, guard++) {
+        const StateRec *r = rec(p, k);
+        if (is_term(r)) break;
+        if (r->minfr > p->frame) continue;
+        if (r->op == 0xdf) {
+            if (in & (r->mask >> 8)) { start_move(f, i, r->tgt); return 1; }
+            continue;
+        }
+        if ((word & r->mask) != r->val) continue;
+        int c = r->cond;
+        if (c && !(c & 0x10) && c != ost) continue;
+        if (c && (c & 0x10) && (c & 0x0f) == ost) continue;
+        if ((unsigned)(r->ctx >> 4) != (r->ctx & ctx)) continue;
+        start_move(f, i, r->tgt);
+        return 1;
+    }
+    return 0;
+}
+
+/* ================================================================== */
+/*  End of move (part of 0x44176b)                                     */
+/* ================================================================== */
+static int check_end(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    int k = p->sp;
+    while (!is_term(rec(p, k)) && k - p->sp < 256) k++;
+    const StateRec *t = rec(p, k);
+    const AniClip *c = cur_clip(p);
+    int len = c ? c->nframes : 1;
+    int airborne = p->mode >= 1 && p->mode <= 3 && p->z > 0;
+    if (t->op == 0xc9 && !airborne) {              /* landing terminator (cb4e0 == 0) */
+        start_move(f, i, t->tgt);
+        return 1;
+    }
+    if (t->fr <= p->frame || p->frame >= len - 1) {
+        if (t->cond == 0x0a) p->face = -p->face;
+        if (t->op == 0xcb) start_move_t(f, i, t->tgt, p->owner ^ 1);   /* player ^ 3 */
+        else start_move(f, i, t->tgt);
+        return 1;
+    }
+    return 0;
+}
+
+/* ================================================================== */
+/*  Hit resolution (0x448cbb)                                          */
+/* ================================================================== */
+static void push_apart(Fight *f, int victim, float amount)
+{
+    float g = gap(f, victim);                      /* attacker relative position */
+    f->p[victim].s += g > 0 ? -amount : amount;
+}
+
+static void resolve_hit(Fight *f, int i)
+{
+    if (!f->hit_pending[i]) return;
+    f->hit_pending[i] = 0;
+    Player *a = &f->p[i], *v = &f->p[i ^ 1];
+    if ((cur_move(v)->stance & 0x3f) == 8) return;
+    unsigned vop = rec(v, v->sp)->op;
+    const short *table = REACT_NORMAL;
+    if (vop == 0xff) table = REACT_BLOCK;
+    else if (vop == 0xfd) table = REACT_BLOCK_ALL;
+    else if (vop == 0xfe) return;                  /* invulnerable */
+    int dmg = f->hit_damage[i];
+    int dir = f->hit_dir[i];
+    int type = cur_move(a)->stance >> 6;
+    int idx = ((cur_move(a)->stance & 0xc0) >> 3) | (f->hit_zone[i] << 5) | dir;
+    if (v->health <= dmg) idx |= 4;
+    int react = table[idx & 127];
+    if (!react) return;
+    start_move(f, i ^ 1, react);
+    /* knock back 0.1 / 0.2 / 0.3 by hit direction */
+    if (dir < 3) push_apart(f, i ^ 1, 0.1f * (float)(dir + 1));
+    if (rec(v, v->sp)->op < 0xfa) {
+        v->health -= dmg;
+        if (v->health < 0) v->health = 0;
+        v->hit_flash = 8;
+    }
+    /* swinging attacks (attack type 1 / 2) turn the fight line around the attacker */
+    if (type == 1 || type == 2)
+        rotate_line_around(f, i, -(float)(dmg << 7) * 6.2831853f / 65536.0f);
+    process_events(f, i ^ 1);
+}
+
+/* ================================================================== */
+/*  Simple CPU opponent (placeholder for 0x425892)                     */
+/* ================================================================== */
+static void ai_input(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (p->ai_timer > 0) { p->ai_timer--; p->in = p->ai_hold; return; }
+    float dist = fabsf(gap(f, i));
+    int r = rand() % 100;
+    if (f->winner >= 0) { p->ai_hold = 0; p->ai_timer = 20; }
+    else if (dist > 1.1f) { p->ai_hold = r < 85 ? IN_FWD : 0; p->ai_timer = 6 + rand() % 18; }
+    else if (r < 26) { p->ai_hold = IN_PUNCH; p->ai_timer = 4; }
+    else if (r < 48) { p->ai_hold = IN_KICK; p->ai_timer = 4; }
+    else if (r < 56) { p->ai_hold = IN_FWD | IN_KICK; p->ai_timer = 4; }
+    else if (r < 68) { p->ai_hold = IN_BACK | IN_PUNCH; p->ai_timer = 18 + rand() % 20; }
+    else if (r < 74) { p->ai_hold = IN_BACK; p->ai_timer = 10; }
+    else if (r < 80) { p->ai_hold = IN_DOWN | IN_KICK; p->ai_timer = 6; }
+    else if (r < 84) { p->ai_hold = IN_UP; p->ai_timer = 3; }
+    else { p->ai_hold = 0; p->ai_timer = 6 + rand() % 12; }
+    p->in = p->ai_hold;
+}
+
+/* ================================================================== */
+/*  Movement modes (0x440f42): jumps and lunges                        */
+/* ================================================================== */
+/* height of the lowest point of the fighter: the mesh when it is known (the soles of the
+ * feet are below the foot joints), otherwise the joints */
+static float lowest_joint(const Fight *f, int i)
+{
+    const Player *p = &f->p[i];
+    const AniFrame *fr = player_frame(p);
+    float mn = 1e9f;
+    if (fr && p->mesh && p->nmesh > 0) {
+        float base = root_h(p) + p->z;
+        int nb = p->nmesh < ANI_MAX_BONES ? p->nmesh : ANI_MAX_BONES;
+        for (int b = 0; b < nb; b++) {
+            const Model *m = &p->mesh[b];
+            if (!m->nverts) continue;
+            float M[4][3]; ani_bone_matrix(fr, b, M);
+            for (int k = 0; k < m->nverts; k++) {
+                const Vec3 *v = &m->verts[k];
+                float z = v->x * M[0][2] + v->y * M[1][2] + v->z * M[2][2] + M[3][2];
+                if (z < mn) mn = z;
+            }
+        }
+        return mn + base;
+    }
+    for (int b = 0; b < 16; b++) { float j[3]; fight_joint(f, i, b, j); if (j[2] < mn) mn = j[2]; }
+    return mn;
+}
+
+static float outside(const float c[3], float half);
+
+/* Keeps the fighter on the floor (the landing code around FUN_00440f42 / a8290 aligns the
+ * lowest foot with the floor height under the fighter). Out of the ring: falls with gravity
+ * onto the lower ground at the arena's fall depth, or further if there is nothing below. */
+static void ground(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (p->ringout) {
+        float pel[3]; fight_joint(f, i, 7, pel);
+        float floor = 0;
+        if (outside(pel, f->ring_half) > 0) {
+            floor = f->fall_depth;
+            if (f->land_half > 0 && outside(pel, f->land_half - 0.2f) > 0) floor = -25.f;   /* nothing below */
+        }
+        float low = lowest_joint(f, i);
+        if (low > floor + 0.002f || p->vz > 0) { p->vz -= 9.8f / FIGHT_HZ; p->z += p->vz / FIGHT_HZ; }
+        low = lowest_joint(f, i);
+        if (low < floor) { p->z += floor - low; p->vz = 0; }
+        return;
+    }
+    if (p->mode >= 1 && p->mode <= 3) return;          /* jump arc: move_modes() */
+    float low = lowest_joint(f, i);
+    if (low < 0) p->z -= low;
+    else if (p->z > 0) p->z -= fminf(fminf(p->z, low), 0.07f);
+}
+
+static void move_modes(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    float toward = gap(f, i) >= 0 ? 1.f : -1.f;
+    if (p->mode >= 1 && p->mode <= 3) {
+        const FighterInfo *fi = p->fi;
+        float v0 = fi ? fi->jump_v : 0.7f, g = fi ? fi->jump_g : -1.4f, sc = fi ? fi->jump_s : 8.f;
+        p->jt += TICK_T;
+        p->z = (p->jt * v0 + p->jt * p->jt * g * 0.5f) * sc + 0.3f;   /* FUN_00440f42 */
+        if (p->mode >= 2) p->s += toward * p->vel * TICK_T;
+        float low = lowest_joint(f, i);
+        if (low < 0) p->z -= low;                     /* feet never go through the floor */
+        if (p->jt > 0.3f && (p->z <= 0.3f || low < 0)) {   /* landed */
+            if (p->z < 0) p->z = 0;
+            p->mode = 0; p->vel = 0;
+        }
+    } else if (p->mode >= 4) {
+        p->s += toward * p->vel * TICK_T;
+    }
+}
+
+/* ================================================================== */
+/*  Spacing (0x43fbca): soft push by body radii                        */
+/* ================================================================== */
+static void spacing(Fight *f)
+{
+    for (int i = 0; i < 2; i++) {
+        Player *p = &f->p[i];
+        int cls = cur_move(p)->cls;
+        float target = p->fi && cls < 6 ? p->fi->body_r[cls] : 0.3f;
+        if (target <= 0) target = 0.3f;
+        if (p->radius < target) { p->radius += 0.02f; if (p->radius > target) p->radius = target; }
+        if (p->radius > target) { p->radius -= 0.02f; if (p->radius < target) p->radius = target; }
+    }
+    Player *a = &f->p[0], *b = &f->p[1];
+    if (a->ringout || b->ringout) return;
+    float pa[3], pb[3];
+    fight_joint(f, 0, 7, pa); fight_joint(f, 1, 7, pb);
+    float dz = fabsf(pa[2] - pb[2]);
+    float g = b->s - a->s;
+    if (!(a->solid && b->solid) || dz >= 0.65f) { f->last_gap = g; return; }
+    /* no passing through each other */
+    if (f->last_gap != 0 && (g > 0) != (f->last_gap > 0)) {
+        a->s += g * 0.5f; b->s -= g * 0.5f;
+        g = b->s - a->s;
+    }
+    float deficit = fabsf(g) - (a->radius + b->radius);
+    if (deficit < 0) {
+        float corr = -deficit * 0.3f, sg = g >= 0 ? 1.f : -1.f;
+        int ga = cur_move(a)->cls == 3, gb = cur_move(b)->cls == 3;
+        if (ga && !gb) b->s += sg * corr * 2;
+        else if (gb && !ga) a->s -= sg * corr * 2;
+        else { a->s -= sg * corr; b->s += sg * corr; }
+    }
+    f->last_gap = b->s - a->s;
+}
+
+/* ================================================================== */
+/*  Ring edge (0x4408f9) and ring-out (0x43f36e)                       */
+/* ================================================================== */
+static void ring_edge(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (p->ringout) return;
+    float lim = f->ring_half + 1.3f - (f->ringouts ? 0.5f : 1.8f);
+    if (p->mode >= 1 && p->mode <= 3) lim = fminf(lim, f->ring_half - 0.3f);   /* a jump does not carry out of the ring */
+    float ux, uy; fight_line_dir(f, &ux, &uy);
+    for (int it = 0; it < 2; it++) {
+        float c[3]; fight_joint(f, i, 7, c);
+        float t = 0;
+        if (c[0] > lim && fabsf(ux) > 0.05f) t = (lim - c[0]) / ux;
+        else if (c[0] < -lim && fabsf(ux) > 0.05f) t = (-lim - c[0]) / ux;
+        else if (c[1] > lim && fabsf(uy) > 0.05f) t = (lim - c[1]) / uy;
+        else if (c[1] < -lim && fabsf(uy) > 0.05f) t = (-lim - c[1]) / uy;
+        if (t == 0) break;
+        p->s += t;
+    }
+}
+
+static float outside(const float c[3], float half) { return fmaxf(fabsf(c[0]), fabsf(c[1])) - half; }
+
+static void ring_out_check(Fight *f, int i)
+{
+    Player *p = &f->p[i];
+    if (!f->ringouts || f->winner >= 0 || p->ringout) return;
+    float pel[3], lf[3], rf[3], sk[3];
+    fight_joint(f, i, 7, pel); fight_joint(f, i, 1, lf); fight_joint(f, i, 9, rf); fight_joint(f, i, 14, sk);
+    float h = f->ring_half;
+    int off = outside(pel, h - 0.1f) > 0;
+    int feet_out = outside(lf, h) > 0 || outside(rf, h) > 0;
+    int m = -1;
+    float nx = 0, ny = 0;                         /* outward normal at the pelvis */
+    if (fabsf(pel[0]) > fabsf(pel[1])) nx = pel[0] > 0 ? 1.f : -1.f; else ny = pel[1] > 0 ? 1.f : -1.f;
+    if (pel[2] < 0.15f && off) {
+        m = ((sk[0] - pel[0]) * nx + (sk[1] - pel[1]) * ny) > 0 ? MOVE_RO_HEAD : MOVE_RO_FEET;
+    } else if (pel[2] > 0.15f && feet_out && (lf[2] < 0.2f || rf[2] < 0.2f)) {
+        float ux, uy; fight_line_dir(f, &ux, &uy);
+        float lx = ux * (float)p->face, ly = uy * (float)p->face;
+        m = (lx * nx + ly * ny) > 0 ? MOVE_RO_STEP : MOVE_RO_BACK;
+    }
+    if (m < 0) return;
+    start_move(f, i, m);
+    p->ringout = 1;
+    f->winner = i ^ 1;
+    f->ko_reason = 1;
+    f->p[f->winner].wins++;
+    f->over_timer = 6 * FIGHT_HZ;
+}
+
+/* ================================================================== */
+/*  Setup / per-tick update                                            */
+/* ================================================================== */
+void fight_init_player(Player *pl, const MoveSet *ms, const AniSet *own, const AniSet *generic,
+                       const FighterInfo *fi)
+{
+    int wins = pl->wins, cpu = pl->cpu, nmesh = pl->nmesh;
+    const Model *mesh = pl->mesh;
+    memset(pl, 0, sizeof *pl);
+    pl->wins = wins; pl->cpu = cpu; pl->mesh = mesh; pl->nmesh = nmesh;
+    pl->ms = ms; pl->cur = ms; pl->own = own; pl->cur_own = own; pl->generic = generic; pl->fi = fi;
+}
+
+void fight_set_arena(Fight *f, const FighterInfo *afi)
+{
+    f->ring_half = afi && afi->ring_half > 0.5f ? afi->ring_half : 5.04f;
+    f->fall_depth = afi ? afi->fall_depth : -1.0f;
+}
+
+void fight_reset(Fight *f)
+{
+    f->round_timer = (f->round_secs > 0 ? f->round_secs : 60) * FIGHT_HZ;
+    f->over_timer = 0;
+    f->winner = -1;
+    f->ko_reason = 0;
+    f->round_age = 0;
+    f->ox = 0; f->oy = 0; f->ang = 1.5707963f;      /* line along world +Y, a8280/4 = -1 / +1 */
+    if (f->ring_half <= 0) f->ring_half = 5.04f;
+    for (int i = 0; i < 2; i++) {
+        Player *p = &f->p[i];
+        p->s = i ? 1.0f : -1.0f;
+        p->face = i ? -1 : 1;
+        p->turn_flag = 0;
+        p->health = MAX_HEALTH;
+        p->in = p->prev_in = 0;
+        p->move = -1;
+        p->aset = NULL;
+        p->cur = p->ms;
+        p->owner = i;
+        p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0;
+        p->radius = 0.3f;
+        p->ringout = 0; p->vz = 0; p->have_prev_box = 0;
+        f->hit_pending[i] = 0;
+    }
+    for (int i = 0; i < 2; i++) start_move(f, i, MOVE_STAND);
+    f->last_gap = f->p[1].s - f->p[0].s;
+}
+
+void fight_tick(Fight *f)
+{
+    for (int i = 0; i < 2; i++) if (f->p[i].cpu) ai_input(f, i);
+    if (f->winner >= 0 || f->round_age < f->start_delay) { f->p[0].in = f->p[1].in = 0; }
+
+    for (int i = 0; i < 2; i++) ring_out_check(f, i);
+    for (int i = 0; i < 2; i++) {
+        Player *p = &f->p[i];
+        process_events(f, i);
+        if (p->cont_hit > 0 && hit_test(f, i, damage_of(p, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
+        if (input_transitions(f, i)) process_events(f, i);
+        if (check_end(f, i)) { process_events(f, i); if (input_transitions(f, i)) process_events(f, i); }
+        p->prev_in = p->in;
+    }
+    resolve_hit(f, 0);
+    resolve_hit(f, 1);
+
+    /* advance animation + root motion (0x445f16) */
+    for (int i = 0; i < 2; i++) {
+        Player *p = &f->p[i];
+        p->frame++;
+        const AniClip *c = cur_clip(p);
+        if (c && p->frame >= c->nframes) p->frame = c->nframes - 1;
+        int fwd = root_fwd(p);
+        p->s -= (float)p->face * (float)(fwd - p->last_fwd) * ANI_UNIT;   /* anim forward is local -Y */
+        p->last_fwd = fwd;
+        if (p->hit_flash > 0) p->hit_flash--;
+        move_modes(f, i);
+        ground(f, i);
+    }
+    spacing(f);
+    for (int i = 0; i < 2; i++) ring_edge(f, i);
+
+    /* round logic (announcer: generic.fxl, FUN_00444b60 area) */
+    f->round_age++;
+    if (f->round_age == FIGHT_HZ) emit_sound(f, 0, 19);                 /* beam-in */
+    if (f->round_age == FIGHT_HZ * 22 / 10) emit_sound(f, 0, 1);       /* "FIGHT!" */
+    if (f->winner < 0) {
+        if (f->round_timer > 0 && f->round_secs >= 0) f->round_timer--;
+        if (f->round_timer > 0 && f->round_timer < 6 * FIGHT_HZ && f->round_timer % FIGHT_HZ == 0)
+            emit_sound(f, 0, 17);                                      /* countdown tick */
+        int ko0 = f->p[0].health <= 0, ko1 = f->p[1].health <= 0;
+        if (ko0 || ko1 || f->round_timer == 0) {
+            if (ko0 && !ko1) f->winner = 1;
+            else if (ko1 && !ko0) f->winner = 0;
+            else f->winner = f->p[0].health >= f->p[1].health ? 0 : 1;
+            f->ko_reason = (ko0 || ko1) ? 0 : 2;
+            f->p[f->winner].wins++;
+            f->over_timer = 6 * FIGHT_HZ;
+            if (f->ko_reason == 2) emit_sound(f, 0, 4);                /* "time" */
+        }
+    } else {
+        f->over_timer--;
+        if (f->over_timer == 5 * FIGHT_HZ) {
+            /* winner announcement: vs CPU "you win" / "you lose", otherwise "player 1/2 wins" */
+            int h0 = !f->p[0].cpu, h1 = !f->p[1].cpu;
+            if (h0 != h1) emit_sound(f, 0, (h0 ? f->winner == 0 : f->winner == 1) ? 2 : 3);
+            else emit_sound(f, 0, f->winner == 0 ? 14 : 15);
+            if (f->p[f->winner].health == MAX_HEALTH) emit_sound(f, 0, 7);
+        }
+        if (f->over_timer == 4 * FIGHT_HZ) {
+            Player *w = &f->p[f->winner], *l = &f->p[f->winner ^ 1];
+            if (w->owner == f->winner) start_move(f, f->winner, MOVE_VICTORY);
+            if (l->health > 0 && !l->ringout && l->owner == (f->winner ^ 1)) start_move(f, f->winner ^ 1, MOVE_DEFEAT);
+        }
+        if (f->over_timer <= 0) { if (f->hold) f->over_timer = 0; else fight_reset(f); }
+    }
+}

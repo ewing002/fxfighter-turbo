@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.16)
+project(fxfighter C)
+
+set(CMAKE_C_STANDARD 11)
+find_package(SDL2 REQUIRED)
+find_package(OpenGL REQUIRED)
+
+add_executable(fxfighter WIN32 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c)
+target_include_directories(fxfighter PRIVATE ${SDL2_INCLUDE_DIRS})
+if(TARGET SDL2::SDL2)
+  target_link_libraries(fxfighter PRIVATE SDL2::SDL2main SDL2::SDL2 OpenGL::GL)
+else()
+  target_link_libraries(fxfighter PRIVATE ${SDL2_LIBRARIES} OpenGL::GL)
+endif()
+if(NOT MSVC)
+  target_link_libraries(fxfighter PRIVATE m)
+  target_compile_options(fxfighter PRIVATE -Wall -Wextra -O2)
+endif()

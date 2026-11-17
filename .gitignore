@@ -1,0 +1,13 @@
+# Az eredeti játékból származó anyagok (nem a port része)
+fight_decomp.c
+*.PAC
+*.pac
+*.mp3
+
+# Build-kimenetek
+build/
+build-win/
+fs
+fs.exe
+*.o
+*.ppm
