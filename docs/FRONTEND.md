@@ -30,8 +30,9 @@ csak a stáblistához és üzenetekhez), `shade.tab` (8 bites árnyalótábla).
   panelbe → a fő világ a teljes képernyőre. Ha a `DAT_004a1df0` (mód) beállt, kilép, és elindítja a játékot.
 - **Objektum** (`0x404a96`, 0x108 bájt): pozíció (1000 = 1,0 egység), forgatás (0,1 fok), méret (256 = 1,0),
   sebesség, célpont, szülő/gyerek lánc, utasításmutató (`+0xf8`), verem, triggerlista, helyi változók
-  (`+0x74`…`+0xd0`), világ (0 fő, 1 jobb, 2 bal). Mátrix: `RotY · RotX · RotZ`, eltolás, majd méretezés;
-  a gyerekek transzformációja egymásba ágyazódik.
+  (`+0x74`…`+0xd0`), világ (0 fő, 1 jobb, 2 bal). Mátrix: `RotY · RotX · RotZ`, eltolás, majd *elő*-méretezés
+  (`0x46ea60` = S · M, tehát a méret csak a modellre hat, a saját pozícióra nem); a gyerekek mátrixa a szülőével
+  szorzódik, így a szülő mérete a gyerekek pozícióját is skálázza.
 - **Globálisok:** `G[n]` = `DAT_004f3e20 + 4n` (16.16). Fontosak: G69 / G72 / G75 a felső / alsó / középső doboz
   állapota, G73/G74 kiválasztott / kurzor elem, G11/G12 a két játékos karaktere, G20–G57 az opciók,
   G58 belépési mód (visszatérés a játékból).
@@ -62,7 +63,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
 1. ✅ Felderítés, eszközök (`tools/stratdis.py`, `tools/menutab.py`, `tools/pe.py`).
 2. ✅ **Eszközök a C-oldalon** (`src/fe3d.c`, ellenőrzés: `tests/fecheck.c`; 210 modell, 246 anyag, ebből 235 textúrás – a hiányzó 11 az eredetiben sem létezik –, 93 szkript, 212 modelltípusból 208 párosítva): `crshipl1.dat` modellek, `demo.mat` anyagok, `demo.pal` + `demo.pix` / `align.pix`
    textúrák, és a bájtkód beolvasása futás közben a felhasználó `FIGHT.EXE`-jéből (a repóba nem kerül eredeti kód).
-3. **Álló jelenet:** a három nézet (fő perspektivikus, két párhuzamos oldalsó), `back1.pix` háttér, fények;
+3. ✅ **Álló jelenet** (`src/fe3d_gl.c`, `--screen fe3d`; az oldalsó párhuzamos kamera magassága adja a 442 px-t, négyzetes pixelekkel – a portréhenger pontosan kitölti a panelt): a három nézet (fő perspektivikus, két párhuzamos oldalsó), `back1.pix` háttér, fények;
    próbaként a főmenü kézzel elhelyezve a táblák alapján. Képernyőképpel ellenőrizve.
 4. **Szkript-VM:** objektumkészlet hierarchiával, kb. 70 műveleti kód, verem, triggerek, 15 Hz-es tick.
    A hálózati műveletek (E1–E3) csonkok („nincs hálózat”).

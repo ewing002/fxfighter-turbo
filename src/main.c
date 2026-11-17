@@ -29,6 +29,7 @@
 #include <math.h>
 #include "assets.h"
 #include "fight.h"
+#include "fe3d_gl.h"
 #include "audio.h"
 #include "ui.h"
 
@@ -1434,6 +1435,65 @@ static void render_front(int w, int h)
     ui_end();
 }
 
+/* ---- 3D front end test (docs/FRONTEND.md, step 3): the main menu placed by hand from the
+ * decoded tables, until the script VM drives the scene ---- */
+static int fe_add(FeScene *sc, const FeAssets *fe, const char *model, int parent, int world,
+                  float x, float y, float z, float rx, float ry, float rz, float scale)
+{
+    if (sc->count >= FE_MAX_NODES) return -1;
+    FeNode *n = &sc->n[sc->count];
+    n->type = fe_type_find(fe, model);
+    n->pos[0] = x / 1000.f; n->pos[1] = y / 1000.f; n->pos[2] = z / 1000.f;   /* strat units */
+    n->rot[0] = rx / 10.f; n->rot[1] = ry / 10.f; n->rot[2] = rz / 10.f;      /* 0.1 degrees */
+    n->scale = scale / 256.f;
+    n->parent = parent; n->world = world; n->hidden = 0;
+    return sc->count++;
+}
+
+static void fe_test_scene(FeScene *sc, const FeAssets *fe)
+{
+    memset(sc, 0, sizeof *sc);
+    /* root strat 0: the two boxes and the two portrait drums */
+    fe_add(sc, fe, "topbox", -1, 0, 0, 63, -200, 0, 0, 0, 167);
+    int bot = fe_add(sc, fe, "botbox", -1, 0, 0, -81, -200, 0, 0, 0, 167);
+    fe_add(sc, fe, "Barrel01", -1, 1, 190, 0, -610, 1200, 0, 0, 252);
+    fe_add(sc, fe, "Barrel01", -1, 2, -190, 0, -610, 1200, 0, 0, 252);
+    /* bottom box state 1 (main menu): items at (x, y, +70) on the front face */
+    static const struct { const char *m; int x, y, s; } it[7] = {
+        { "Oneplayer", 0, 90, 276 }, { "twoplayer", 0, 60, 276 }, { "Tournament", 0, 30, 276 },
+        { "Endurance", 0, 0, 276 }, { "Options", 0, -30, 276 }, { "network", -80, -60, 180 }, { "Exit", 80, -60, 180 } };
+    for (int i = 0; i < 7; i++) fe_add(sc, fe, it[i].m, bot, 0, (float)it[i].x, (float)it[i].y, 70, 0, 0, 0, (float)it[i].s);
+    /* cursor arrows of item 0: (100, 90) | (-100, 90), Arrow01 scale 128 */
+    fe_add(sc, fe, "Arrow01", bot, 0, 100, 90, 70, 0, 0, 0, 128);
+    fe_add(sc, fe, "Arrow01", bot, 0, -100, 90, 70, 0, 0, 0, 128);
+}
+
+static int fe3d_shot(const char *path, SDL_Window *win)
+{
+    static FeAssets fe;
+    static FeScene sc;
+    char exe[1100];
+    snprintf(exe, sizeof exe, "%sFIGHT.EXE", g_pac_dir);
+    const char *err = NULL;
+    if (!fe_assets_load(&fe, &g_pac, exe, &err)) { fprintf(stderr, "3D front end: %s\n", err); return 1; }
+    fe_gl_init(&fe);
+    fe_test_scene(&sc, &fe);
+    int w, h;
+    SDL_GL_GetDrawableSize(win, &w, &h);
+    fe_gl_render(&fe, &sc, w, h);
+    uint8_t *px = malloc((size_t)w * h * 3);
+    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, px);
+    FILE *f = fopen(path, "wb");
+    if (!f) return 1;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (int y = h - 1; y >= 0; y--) fwrite(px + (size_t)y * w * 3, 1, (size_t)w * 3, f);
+    fclose(f);
+    free(px);
+    fe_gl_free();
+    fe_assets_free(&fe);
+    return 0;
+}
+
 static int screenshot_mode(const char *path, SDL_Window *win)
 {
     int w, h;
@@ -1505,8 +1565,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--demo")) { demo = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--fight")) g_debug_fight = 1;
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
-            static const char *names[] = { "title", "menu", "select", "arena", "vs", "options" };
-            for (int k = 0; k < 6; k++) if (!strcmp(argv[i + 1], names[k])) screen = k;
+            static const char *names[] = { "title", "menu", "select", "arena", "vs", "options", "fe3d" };
+            for (int k = 0; k < 7; k++) if (!strcmp(argv[i + 1], names[k])) screen = k;
             i++;
         }
     }
@@ -1548,6 +1608,7 @@ int main(int argc, char **argv)
     } else set_state(ST_TITLE);
 
     if (shot) {
+        if (screen == 6) return fe3d_shot(shot, win);   /* 3D front end test scene */
         if (screen >= 0) {                       /* front end screenshots */
             g_state = screen; g_two_players = 1;
             g_pick[0] = 4; g_pick[1] = screen == 2 ? 0 : 6; g_cur[0] = 3; g_cur[1] = 7; g_menu_sel = 0;

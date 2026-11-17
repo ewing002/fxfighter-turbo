@@ -83,6 +83,12 @@ const Model *fe_type_model(const FeAssets *fe, int type)
     return &fe->models[fe->type_model[type]];
 }
 
+int fe_type_find(const FeAssets *fe, const char *name)
+{
+    for (int t = 0; t < FE_NUM_TYPES; t++) if (name_eq(fe->type_name[t], name)) return t;
+    return -1;
+}
+
 #define STRAT_TABLE 0x49fb88u
 #define TYPE_TABLE  0x4a2948u
 

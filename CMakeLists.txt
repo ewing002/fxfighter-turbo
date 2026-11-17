@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 
-add_executable(fxfighter WIN32 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c)
+add_executable(fxfighter WIN32 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c)
 target_include_directories(fxfighter PRIVATE ${SDL2_INCLUDE_DIRS})
 if(TARGET SDL2::SDL2)
   target_link_libraries(fxfighter PRIVATE SDL2::SDL2main SDL2::SDL2 OpenGL::GL)

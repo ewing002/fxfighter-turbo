@@ -48,5 +48,6 @@ typedef struct {
 int  fe_assets_load(FeAssets *fe, const Pac *pac, const char *exe_path, const char **err);
 void fe_assets_free(FeAssets *fe);
 const Model *fe_type_model(const FeAssets *fe, int type);
+int fe_type_find(const FeAssets *fe, const char *name);   /* model type by name, -1 = none */
 
 #endif
