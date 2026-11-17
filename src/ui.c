@@ -17,7 +17,7 @@ static Sprite g_back, g_title;
 static const char *BOUT_NAMES[] = {
     "fight", "ko", "round", "rndnumbr", "ringout", "timeover", "winner", "youwin", "youlose",
     "suddeath", "draw", "timer", "panel", "pan_cpu", "gameover", "pause",
-    "pan_pl1", "pan_pl2", "pan_cr1", "pan_cr2", "pan_cr3", "pan_cr4", "pan_cr5", "pan_cr6",
+    "pan_pl1", "pan_pl2", "pan_pl3", "pan_pl4", "pan_pl5", "pan_pl6", "pan_pl7", "pan_pl8", "pan_cr1", "pan_cr2", "pan_cr3", "pan_cr4", "pan_cr5", "pan_cr6",
     "pan_cr7", "pan_cr8", "pan_cr9", "pan_cr10", "pan_cr11", "pan_cr12" };
 #define NBOUT (int)(sizeof BOUT_NAMES / sizeof *BOUT_NAMES)
 static Sprite g_bout[NBOUT];

@@ -99,6 +99,18 @@ static int  g_pad_dir[2][2];                    /* last stick direction per pad 
 static int  g_last_health[2];
 static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
 static void fe_enter(void);
+/* endurance (FUN_00419219): two teams of up to 4; after each bout only the loser brings the next
+ * fighter, the winner keeps the health he has left; no time limit; the team that runs out loses */
+static int  g_endu;                             /* endurance match running */
+static int  g_endu_id[2][4], g_endu_human[2][4], g_endu_n[2], g_endu_pos[2];
+/* tournament (FUN_00431676, Wraptour.c): 4 or 8 entrants, a placement bracket (every place is
+ * played out), the 3D front end shows the VS screen between matches and the standings at the end */
+static int  g_tour, g_tour_vs;                   /* tournament running; its VS screen is on */
+static int  g_tour_f[8], g_tour_h[8], g_tour_n;  /* entrant fighter, human flag, count */
+static int  g_tour_node, g_tour_first, g_tour_a, g_tour_b;   /* match node, entrants on the P1 / P2 side */
+static int  g_tn_win[20], g_tn_lose[20];
+static void tour_play(void);
+static void tour_result(int winner_side);
 /* fight keys as DirectInput scan codes, in the order of the original config block (0x4a588a,
  * read by FUN_00428036): per player forward and back as seen from the starting side, up, down,
  * punch, kick. The port's defaults (the original's are C X A Z V Q / N M L , B P). */
@@ -412,15 +424,19 @@ static void draw_hud(int w, int h)
             if (i == 0) ui_rect(ix0, y + 6, ix0 + cut, y + 20, 0.08f, 0.0f, 0.02f, 1);
             else        ui_rect(ix1 - cut, y + 6, ix1, y + 20, 0.08f, 0.0f, 0.02f, 1);
         }
-        int need = g_cfg.rounds / 2 + 1;
+        int need = g_endu ? g_endu_n[i] - 1 : g_cfg.rounds / 2 + 1;   /* endurance: the team behind him */
         for (int k = 0; k < need; k++) {         /* one slot per round needed to win the match */
             float wx = i ? x + k * 24.f : x + 244.f - (float)(k + 1) * 24.f;
             if (p->wins > k) ui_draw_part(pan, 134, 144, wx, y + 30, 2, 1);
             else             ui_draw_part(pan, 122, 134, wx, y + 30, 2, 1);
         }
-        char nm[16];
-        int id = g_f[i].id;
+        char nm[24];
+        int id = g_f[i].id, ent = i ? g_tour_b : g_tour_a;
         snprintf(nm, sizeof nm, "pan_cr%d", id);
+        if (g_tour) {                            /* tournament: "PLAYER n" / "CPU" (0x431b3b) */
+            if (g_tour_h[ent]) snprintf(nm, sizeof nm, "pan_pl%d", ent + 1);
+            else snprintf(nm, sizeof nm, "pan_cpu");
+        }
         float lx = i ? 624.f - 128.f : 16.f;
         ui_draw(ui_bout(nm), lx, y + 30, 2, 1);
         ui_draw(ui_bout(p->cpu ? "pan_cpu" : (i ? "pan_pl2" : "pan_pl1")), lx, y + 52, 2, 1);
@@ -859,7 +875,7 @@ static void cfg_apply(void)
 {
     if (g_win) {
         int fs = (SDL_GetWindowFlags(g_win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-        if (fs != g_cfg.fullscreen) SDL_SetWindowFullscreen(g_win, g_cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+        if (fs != g_cfg.fullscreen && !getenv("FX_AUTOTEST")) SDL_SetWindowFullscreen(g_win, g_cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     }
     SDL_GL_SetSwapInterval(g_cfg.vsync ? 1 : 0);
     music_set_volume((float)g_cfg.music / 10.0f);
@@ -1127,10 +1143,10 @@ static void begin_match(int p1, int p2, int arena, int cpu1, int cpu2)
     fighter_load(&g_f[0], p1, g_arena.pal);
     fighter_load(&g_f[1], p2, g_arena.pal);
     g_fight.p[0].wins = g_fight.p[1].wins = 0;
-    g_fight.p[0].cpu = cpu1 || getenv("FX_AUTOTEST"); g_fight.p[1].cpu = cpu2 && !getenv("FX_AUTOWIN");
+    g_fight.p[0].cpu = cpu1 || getenv("FX_AUTOTEST"); g_fight.p[1].cpu = (cpu2 || getenv("FX_AUTOTEST")) && !getenv("FX_AUTOWIN");
     g_fight.hold = 1;
     g_fight.start_delay = FIGHT_HZ * 22 / 10;      /* ROUND n ... FIGHT! */
-    g_fight.round_secs = g_cfg.round_secs;
+    g_fight.round_secs = g_endu ? -1 : g_cfg.round_secs;   /* endurance: 0x4a587e = -1 */
     g_ringouts = g_cfg.ringouts;
     g_fight.ai_level = g_cfg.difficulty;
     g_fight_paused = 0;
@@ -1189,6 +1205,8 @@ static void after_match(void)
         fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1);
         return;
     }
+    g_endu = 0;
+    if (g_tour) { tour_result(g_fight.winner); return; }
     if (g_fe_ok && g_fe_mode >= 0) {                /* started from the 3D front end */
         if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
         fe_enter();
@@ -1205,9 +1223,30 @@ static void after_match(void)
 
 /* called once per FIGHT_HZ tick while fighting */
 static void camera_step(int snap);
+
+/* the loser of an endurance bout brings his next fighter (FUN_00419219 loop) */
+static void endurance_next(void)
+{
+    int win = g_fight.winner, lose = win ^ 1;
+    if (++g_endu_pos[lose] >= g_endu_n[lose]) { g_match_over_t = 3 * FIGHT_HZ; return; }   /* team out */
+    if (getenv("FX_AUTOTEST")) { printf("endurance: side %d lost, next %d/%d, winner health %d\n", lose, g_endu_pos[lose] + 1, g_endu_n[lose], g_fight.p[win].health); fflush(stdout); }
+    int keep = g_fight.p[win].health;
+    int id = g_endu_id[lose][g_endu_pos[lose]];
+    if (lose == 0) g_f[0].id = 0;                   /* fighter_load: no mirror costume for player 1 */
+    fighter_load(&g_f[lose], id, g_arena.pal);
+    g_fight.p[lose].cpu = !g_endu_human[lose][g_endu_pos[lose]] || (lose == 0 && getenv("FX_AUTOTEST"));
+    restart_fight();                                 /* new bout: both back to the start */
+    g_fight.p[win].health = keep;                    /* 0x4cb480: only the loser's health is reset */
+    for (int i = 0; i < 2; i++) g_fight.p[i].wins = g_endu_n[i] - 1 - g_endu_pos[i];
+    g_round++;
+    if (g_endu_pos[0] == g_endu_n[0] - 1 || g_endu_pos[1] == g_endu_n[1] - 1) sfx_play(0, 11);   /* "last fighter" */
+    g_yaw_ofs = 0; camera_step(1);
+}
+
 static void match_tick(void)
 {
     if (g_match_over_t > 0) { if (--g_match_over_t == 0) after_match(); return; }
+    if (g_endu && g_fight.winner >= 0 && g_fight.over_timer <= 0) { endurance_next(); return; }
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
         int need = g_fe_mode == 0 ? 1 : g_cfg.rounds / 2 + 1;   /* attract demo: one round */
         if (g_fight.p[0].wins >= need || g_fight.p[1].wins >= need) g_match_over_t = 3 * FIGHT_HZ;
@@ -1531,6 +1570,16 @@ static int fe3d_shot(const char *path, SDL_Window *win)
     fe_gl_init(&fe);
     static FeVm vm;
     if (!fe_vm_init(&vm, &fe)) { fprintf(stderr, "3D front end: VM init failed\n"); return 1; }
+    if (getenv("FX_FE_ENTRY")) {                /* testing: FX_FE_G="59=60000,60=40000" (hex), entry mode */
+        for (const char *p = getenv("FX_FE_G"); p && *p; ) {
+            char *e; int g = (int)strtol(p, &e, 10);
+            if (*e != '=') break;
+            uint32_t v = (uint32_t)strtoul(e + 1, &e, 16);
+            if (g >= 0 && g < FEVM_NG) vm.G[g] = (int32_t)v;
+            p = *e == ',' ? e + 1 : e;
+        }
+        fe_vm_restart(&vm, atoi(getenv("FX_FE_ENTRY")));
+    }
     const char *ticks = getenv("FX_FE_TICKS"), *input = getenv("FX_FE_INPUT");
     int n = ticks ? atoi(ticks) : 60;
     for (int t = 0; t < n && vm.mode < 0; t++) { fe_script_input(&vm, input, t); fe_vm_tick(&vm); }
@@ -1658,9 +1707,80 @@ static int fe_load(void)
 
 static void fe_enter(void)
 {
-    g_fe_mode = -1; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
+    g_fe_mode = -1; g_endu = 0; g_tour = g_tour_vs = 0; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
     port_to_fecfg();
     fe_vm_restart(&g_vm, 0);
+    memset(g_fe_latch, 0, sizeof g_fe_latch);
+    g_fe_ticks = 0;
+    set_state(ST_FE3D);
+}
+
+/* ---- tournament (FUN_00431676) ---- */
+static const int8_t TN_NEXT[20] = { -1, 0, 1, 2, 5, 3, 7, 4, 9, 10, 11, 6, -1, -1, -1, -1, -1, -1, -1, -1 };
+static const int8_t TN_A[20] = { 4, 4, 6, 6, 8, 10, 8, 10, 12, 14, 16, 18 }, TN_B[20] = { 5, 5, 7, 7, 9, 11, 9, 11, 13, 15, 17, 19 };
+static const uint8_t TN_WIN[20] = { 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1 };   /* 0x80: winners node, else losers */
+
+static int *tn_field(int node, int child_b)
+{
+    int c = child_b ? TN_B[node] : TN_A[node];
+    return TN_WIN[node] ? &g_tn_win[c] : &g_tn_lose[c];
+}
+
+static void tour_fight(void)
+{
+    int a = g_tour_a, b = g_tour_b;
+    g_two_players = g_tour_h[a] && g_tour_h[b];
+    begin_match(g_tour_f[a], g_tour_f[b], g_tour_f[b] <= 11 ? g_tour_f[b] : 1, !g_tour_h[a], !g_tour_h[b]);   /* arena: P2's */
+}
+
+/* the next match of the bracket: skip nodes with an empty side, put a human on the P1 side */
+static void tour_play(void)
+{
+    int nd = g_tour_node;
+    while (nd >= 0 && (*tn_field(nd, 0) < 0 || *tn_field(nd, 1) < 0)) nd = TN_NEXT[nd];
+    g_tour_node = nd;
+    if (nd < 0) return;
+    int *fa = tn_field(nd, 0), *fb = tn_field(nd, 1);
+    if (!g_tour_h[*fa] && g_tour_h[*fb]) { int t = *fa; *fa = *fb; *fb = t; }
+    g_tour_a = *fa; g_tour_b = *fb;
+    if (getenv("FX_AUTOTEST")) { printf("tournament: node %d: entrant %d (f%d%s) vs %d (f%d%s)\n", nd, g_tour_a, g_tour_f[g_tour_a], g_tour_h[g_tour_a] ? " human" : "", g_tour_b, g_tour_f[g_tour_b], g_tour_h[g_tour_b] ? " human" : ""); fflush(stdout); }
+    if (g_tour_first) { g_tour_first = 0; tour_fight(); return; }   /* the menu already showed the first pair */
+    /* VS screen of the front end (0x433900): entry mode 1, G59/G60 fighters, G63 labels (8 = cpu) */
+    g_vm.G[59] = g_tour_f[g_tour_a] << 16;
+    g_vm.G[60] = g_tour_f[g_tour_b] << 16;
+    g_vm.G[63] = (int32_t)(((uint32_t)(g_tour_h[g_tour_a] ? g_tour_a : 8) << 24) | ((uint32_t)(g_tour_h[g_tour_b] ? g_tour_b : 8) << 16));
+    port_to_fecfg();
+    fe_vm_restart(&g_vm, 1);
+    memset(g_fe_latch, 0, sizeof g_fe_latch);
+    g_fe_ticks = 0;
+    g_tour_vs = 1;
+    set_state(ST_FE3D);
+}
+
+/* a match is over: winners / losers go up the bracket; after the final the standings */
+static void tour_result(int winner_side)
+{
+    int nd = g_tour_node, w = winner_side ? 1 : 0;
+    g_tn_win[nd] = *tn_field(nd, w);
+    g_tn_lose[nd] = *tn_field(nd, !w);
+    g_tour_node = TN_NEXT[nd];
+    tour_play();
+    if (g_tour_node >= 0) return;
+    /* standings (0x43125c): places 1..8 = final, 3rd, 5th, 7th place nodes; G58 = 6 shows them */
+    uint32_t ent[2] = { 0, 0 }, fig[2] = { 0, 0 };
+    for (int p = 0; p < 8; p++) {
+        int e = (p & 1) ? g_tn_lose[p / 2] : g_tn_win[p / 2];
+        uint32_t en = e < 0 ? 0xff : g_tour_h[e] ? (uint32_t)e : 8, fi = e < 0 ? 0 : (uint32_t)g_tour_f[e];
+        ent[p / 4] |= en << (24 - 8 * (p % 4));
+        fig[p / 4] |= fi << (24 - 8 * (p % 4));
+    }
+    if (getenv("FX_AUTOTEST")) { printf("tournament over: places %08x %08x fighters %08x %08x\n", ent[0], ent[1], fig[0], fig[1]); fflush(stdout); }
+    g_tour = 0;
+    g_fe_mode = -1; g_game = 1;
+    port_to_fecfg();
+    g_vm.G[59] = (int32_t)fig[0]; g_vm.G[60] = (int32_t)fig[1];   /* raw bytes, not 16.16 */
+    g_vm.G[64] = (int32_t)ent[0]; g_vm.G[65] = (int32_t)ent[1];
+    fe_vm_restart(&g_vm, 6);
     memset(g_fe_latch, 0, sizeof g_fe_latch);
     g_fe_ticks = 0;
     set_state(ST_FE3D);
@@ -1674,7 +1794,51 @@ static void fe_start_match(int m)
     fe_vm_g_to_cfg(&g_vm);                       /* the options as set in the menu, saved or not */
     fecfg_to_port();
     cfg_apply();
-    if (m == 3 || m == 4) { p1 = g_vm.G[11] >> 16; m = 1; }
+    if (m == 3) {                               /* endurance: 4 slots per side, top byte first */
+        for (int sd = 0; sd < 2; sd++) {
+            uint32_t v = (uint32_t)(sd ? g_vm.p2 : g_vm.p1);
+            g_endu_n[sd] = 0; g_endu_pos[sd] = 0;
+            for (int b = 3; b >= 0; b--) {
+                int c = (int)(v >> (8 * b)) & 0xff;
+                if (!c) continue;
+                int id = c & 0xf;                    /* bit 0x20: human controlled (0x4f3264) */
+                g_endu_id[sd][g_endu_n[sd]] = fighter_exists(id) ? id : random_fighter();
+                g_endu_human[sd][g_endu_n[sd]] = (c & 0x20) != 0;
+                g_endu_n[sd]++;
+            }
+            if (!g_endu_n[sd]) { g_endu_id[sd][0] = random_fighter(); g_endu_human[sd][0] = sd == 0; g_endu_n[sd] = 1; }
+        }
+        int a1 = g_endu_id[0][0], a2 = g_endu_id[1][0];
+        g_fe_mode = 3; g_endu = 1; g_two_players = g_endu_human[1][0];
+        begin_match(a1, a2, a2 <= 11 ? a2 : 1, !g_endu_human[0][0], !g_endu_human[1][0]);   /* arena: 0x4a8308 */
+        for (int i = 0; i < 2; i++) g_fight.p[i].wins = g_endu_n[i] - 1;
+        return;
+    }
+    if (m == 4) {                               /* tournament: bytes p1>>24, p2>>24, p1>>16, ... (0x431063) */
+        uint32_t a = (uint32_t)g_vm.p1, b = (uint32_t)g_vm.p2;
+        int n = 0;
+        for (int k = 0; k < 8; k++) {
+            int c = (int)(((k & 1) ? b : a) >> (24 - 8 * (k / 2))) & 0xff;
+            if (!c) break;
+            g_tour_f[n] = fighter_exists(c & 0x1f) ? (c & 0x1f) : random_fighter();
+            g_tour_h[n] = (c & 0x20) != 0;
+            n++;
+        }
+        if (n == 4 || n == 8) {
+            g_tour_n = n; g_tour = 1; g_tour_first = 1; g_fe_mode = 4;
+            for (int k = 0; k < 20; k++) g_tn_win[k] = g_tn_lose[k] = -1;
+            int nd = n, side = 0;                    /* seeding 0x430dbc: slot order, node 8 (or 4) first */
+            for (int i = 0; i < n; i++) {
+                g_tn_win[side ? TN_B[nd] : TN_A[nd]] = i;
+                if (side) nd = TN_NEXT[nd];
+                side ^= 1;
+            }
+            g_tour_node = n;
+            tour_play();
+            return;
+        }
+        p1 = g_vm.G[11] >> 16; m = 1;            /* unexpected count: a one player ladder */
+    }
     if (!fighter_exists(p1)) p1 = random_fighter();
     if (!fighter_exists(p2) || p2 == p1) p2 = next_fighter(p1, 1);
     g_fe_mode = m;
@@ -1741,6 +1905,11 @@ static int fe_tick(void)
     if (g_vm.mode < 0) return 1;
     int m = g_vm.mode;
     if (getenv("FX_AUTOTEST")) { printf("fe3d mode %d p1 %d p2 %d arena %d\n", m, g_vm.p1, g_vm.p2, g_vm.arena); fflush(stdout); }
+    if (m == 6 && g_tour_vs) {                                   /* tournament VS screen done */
+        g_tour_vs = 0;
+        tour_fight();
+        return 1;
+    }
     if (m == 6) return 0;                                        /* Exit */
     if (m >= 7) { fe_vm_restart(&g_vm, m == 7 ? 0 : m); return 1; }
     if (m == 5) { fe_vm_restart(&g_vm, 0); return 1; }           /* network: not available */
@@ -1779,12 +1948,13 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
     SDL_Window *win = SDL_CreateWindow("FX Fighter Turbo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                                       1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
+                                       (getenv("FX_AUTOTEST") ? SDL_WINDOW_HIDDEN : 0));   /* tests: no window on the screen */
     if (!win) {
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
         win = SDL_CreateWindow("FX Fighter Turbo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                               1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+                               1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (getenv("FX_AUTOTEST") ? SDL_WINDOW_HIDDEN : 0));
     }
     if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
     g_win = win;
@@ -1910,6 +2080,12 @@ int main(int argc, char **argv)
                 Fighter *a = &g_f[0], *b = &g_f[1];
                 SDL_Keycode k = e.key.keysym.sym;
                 if (g_state == ST_FIGHT && g_fe_mode == 0) { fe_enter(); continue; }   /* any key ends the demo */
+                if (g_state == ST_FIGHT && g_tour && g_fight.p[0].cpu && g_fight.p[1].cpu && k != SDLK_ESCAPE &&
+                    !getenv("FX_AUTOTEST")) {           /* 0x445874: a CPU match is skipped, random winner */
+                    g_match_over_t = 0;
+                    tour_result(rand() & 1);
+                    continue;
+                }
                 if (g_state == ST_FIGHT && g_game && k != SDLK_ESCAPE && key_bound(e.key.keysym.scancode)) continue;
                 if (g_state == ST_FE3D) {             /* the scripts poll the keys once per tick */
                     SDL_Scancode sc = e.key.keysym.scancode ? e.key.keysym.scancode : SDL_GetScancodeFromKey(k);

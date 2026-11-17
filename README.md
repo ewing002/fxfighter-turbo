@@ -30,8 +30,9 @@ menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek szá
 Ha a `FIGHT.EXE` hiányzik, vagy `--menu2d` kapcsolóval indítod, a port régi 2D-s menüi jönnek elő.
 A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítani (ATTACK = előre, RETREAT = hátra a kezdőoldalról nézve);
 a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
-Még hiányzik: az állóképesség és a torna módot a port egyelőre 1 játékos létraként játssza le; nincs hálózati játék;
-a hendikep és a részletességi szintek nem hatnak a harcra.
+ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
+TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
+Még hiányzik: nincs hálózati játék; a hendikep és a részletességi szintek nem hatnak a harcra.
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.

@@ -98,7 +98,23 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      győzelmek 1–3 ↔ 1/3/5 menet, hangerő 1–8 ↔ 0–10, elcsúszás nélkül). Mint az eredetiben, a SAVE (D9/DD) ment,
      a LOAD (D8) tölt, a hangerő-csúszkák (DF/E0) élőben hatnak; meccsindításkor a G → cfg átírás mentés nélkül is érvényes;
    - START_GAME: 0 bemutató (gép–gép, egy menet, bármely gomb megszakítja), 1 létra (a port létratáblájával),
-     2 kétjátékos (a VM karaktereivel és arénájával), 6 kilépés, 7/8/9 a menü újraindítása, 5 (hálózat) nem érhető el;
+     2 kétjátékos (a VM karaktereivel és arénájával), 3 állóképesség, 4 torna (lent), 6 kilépés, 7/8/9 a menü
+     újraindítása, 5 (hálózat) nem érhető el;
+   - **állóképesség** (`FUN_00419219`): p1 / p2 egy-egy legfeljebb 4 fős csapat, a felső bájttól lefelé; bájtonként
+     `& 0xf` a harcos, `0x20` = ember (`DAT_004f3264` emberi maszk: 1P = 1, 2P = 3, bemutató = 0). Az aréna a 2. csapat
+     első harcosáé, a menetidő végtelen (`0x4a587e = -1`). Egy-egy menet után csak a vesztes hozza a következő harcosát,
+     és csak az ő élete áll vissza 120-ra (a meccsfüggvény `0x4f3268 == 0x16` mellett nem tölti fel). A győzelem-jelek
+     helyén a csapatban váró harcosok látszanak; ha valamelyik csapatnak egy harcosa maradt, a bemondó „utolsó harcos”
+     (generic 11). Amelyik csapat elfogy, az veszít;
+   - **torna** (`FUN_00431676`, `Wraptour.c`; a VS-képernyő a 29., az eredménytábla a 88. szkript): az induló bájtok
+     sorrendje p1>>24, p2>>24, p1>>16, p2>>16, …, `& 0x1f` a harcos, `0x20` = ember; 4 vagy 8 induló (1–4, illetve 5–8
+     ember, a többi gépi). Helyosztós ágrajz 20 statikus csomóponttal (`0x4a6500`): 8 indulónál 4 negyeddöntő, 2 vigaszág,
+     2 elődöntő, a 7., az 5., a 3. hely és a döntő (12 meccs), 4 indulónál 2 elődöntő, 3. hely, döntő. A párosítás a
+     helyek sorrendje; ember a gép ellen mindig az 1. oldalra kerül; az aréna a 2. oldali harcosé; a menetek és az idő
+     a szokásosak. Gép–gép meccset bármely gomb véletlen győztessel átugor. Harc közben a névpanel `pan_pl<n>` vagy
+     `pan_cpu`. A 2. meccstől a front end VS-képernyője jön (belépési mód 1, G59/G60 a két harcos 16.16-ban, G63 a két
+     címke: induló 0–7, 8 = cpu), a végén a helyezések (belépési mód 6, G59/G60 a helyezettek harcosai, G64/G65 az
+     indulók, nyers bájtokként, felül a jobb hely); a táblázatról ütés a főmenübe visz. Nincs ágrajz-képernyő;
    - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
    - gombkiosztás: a harci bemenet (`0x428036`) játékosonként 6 gombot olvas a `0x4a588a + 6p` címről: ATTACK
      (előre a kezdőoldalról), RETREAT, JUMP, DUCK, PUNCH, KICK (DirectInput-kódok; bitek 0x01/0x02, 0x08, 0x04, 0x10,
@@ -109,8 +125,9 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      gyorsgombok (B, N, R, M, X, 1, 2…) nem élnek, ha egy emberi játékos gombja. A nyers billentyűre várás (E4)
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
-   LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés. Hátra van: hendikep, állóképesség (3) és torna (4) – most 1P-létra –,
-   rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: hendikep, a torna bemondója (az eredetiben minden menet
+   győztesét név szerint mondja), rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 
