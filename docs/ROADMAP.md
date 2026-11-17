@@ -19,7 +19,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 | `0x46d490` / `0x46e5c0` / `0x46e700` / `0x46e960` | BrMatrix34RotateZ / PostRotateX / PostRotateY / PostTranslate |
 | `0x4a8780 + i*4` | klipszám harcosonként |
 | `0x4c71e0 + i*4` | animációs tábla pointere harcosonként |
-| `0x4231c0` | **kamera**: távolság 0,9·D + 1,6, a függőlegestől mért szög 95 − D/0,3 fok, magasság +0,5, a harcvonal követése 30 fokos holtsávval |
+| `0x4231c0` | **kamera**: távolság 0,9·D + 1,6, a függőlegestől mért szög 95 − D/0,3 fok, magasság +0,5, a harcvonal követése 30 fokos holtsávval. D = √(dx² + dy² + h²) a követett medence-pozíciókból (`a8320`/`a8330`: 0,1 holtsáv, ¼ sebesség), h = a magasabb medence (csak 3-nál kisebb távolságnál frissül); a középpont a követett pozíciók átlaga, 0,01-es holtsávval |
 | `0x42106c` / `0x4a4be8` | kamera-előbeállítások (128 db: szög, dőlés, távolság, sebesség), a mozdulatok 0x21-es bájtja választja ki |
 | `0x41d5b0` | háttér: a kamerához rögzített `bground.dat` sáv, kameraforduló = 320 egység görgetés |
 | `0x4221b2` | kamerarendező: mozdulatkamera; ring széle (harcos a széltől 1,8-on belül, távolság < 4: szög 90 ± 12·(3,5 − táv), dőlés 83 − 8·(3,5 − táv)), ha a részletesség (`0x4a5888`) ≥ 1 |

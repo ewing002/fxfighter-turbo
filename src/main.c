@@ -902,9 +902,20 @@ static void camera_step(int snap)
     float ux, uy; fight_line_dir(&g_fight, &ux, &uy);
     float dx = x1 - x0, dy = y1 - y0;
     if (dx * ux + dy * uy < 0) { ux = -ux; uy = -uy; }    /* keep player 1 on the left */
-    /* distance between the fighters (with the higher jump), dead zone 0.01 */
-    float zz = z0 > z1 ? z0 : z1; if (zz < 0) zz = 0;
-    float D = sqrtf(dx * dx + dy * dy + zz * zz);
+    /* FUN_004231c0 works with the pelvis positions followed by the fight engine (a8320 / a8330,
+     * 0.1 dead zone, 1/4 rate): distance = sqrt(dx^2 + dy^2 + h^2), h = the higher pelvis, only
+     * updated while the fighters are closer than 3 (bd990); 0.01 dead zone */
+    (void)z0; (void)z1;
+    const Player *q0 = &g_fight.p[0], *q1 = &g_fight.p[1];
+    float tdx = q1->tx - q0->tx, tdy = q1->ty - q0->ty;
+    static float s_cam_h2 = 1.0f;
+    if (snap || fabsf(q1->s - q0->s) < 3.0f) {
+        float p0[3], p1[3];
+        fight_joint(&g_fight, 0, 7, p0); fight_joint(&g_fight, 1, 7, p1);
+        float h = p0[2] > p1[2] ? p0[2] : p1[2];
+        s_cam_h2 = h * h;
+    }
+    float D = sqrtf(tdx * tdx + tdy * tdy + s_cam_h2);
     if (snap || fabsf(D - g_cam_D) > 0.01f) g_cam_D = D;
     /* line angle: starts following when more than 30 degrees off, 1/32 of the error per tick */
     float target = atan2f(uy, ux) * 57.29578f;
@@ -936,9 +947,9 @@ static void camera_step(int snap)
     if (!mc && !g_cm_preset && !g_fight.p[0].ringout && !g_fight.p[1].ringout && !snap) {
         float lim = g_fight.ring_half - 1.8f;
         int e = 0;
-        if (fabsf(x0) > lim || fabsf(y0) > lim) e |= 1;
-        if (fabsf(x1) > lim || fabsf(y1) > lim) e |= 2;
-        if (e == 3) e = (x0 * x0 + y0 * y0 <= x1 * x1 + y1 * y1) ? 2 : 1;   /* the one further out */
+        if (fabsf(q0->tx) > lim || fabsf(q0->ty) > lim) e |= 1;          /* followed pelvis positions (a8320 / a8330) */
+        if (fabsf(q1->tx) > lim || fabsf(q1->ty) > lim) e |= 2;
+        if (e == 3) e = (q0->tx * q0->tx + q0->ty * q0->ty <= q1->tx * q1->tx + q1->ty * q1->ty) ? 2 : 1;   /* the one further out */
         float gp = fabsf(g_fight.p[1].s - g_fight.p[0].s);
         if ((e == 1 || e == 2) && gp < 4.0f) {
             float a = 3.5f - gp; if (a < 0) a = 0;
@@ -989,11 +1000,12 @@ static void camera_step(int snap)
         g_shake_ph += 45.f;
     }
     /* centre: between the fighters, or on the fighter the preset focuses on */
-    float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
-    if (g_cm_focus == 0) { cx = x0; cy = y0; }
-    if (g_cm_focus == 1) { cx = x1; cy = y1; }
-    if (snap) { g_cam_x = cx; g_cam_y = cy; }
-    else { g_cam_x += (cx - g_cam_x) * 0.15f; g_cam_y += (cy - g_cam_y) * 0.15f; }
+    /* (the followed pelvis positions; changes within 0.01 are ignored, otherwise no smoothing) */
+    float cx = (q0->tx + q1->tx) * 0.5f, cy = (q0->ty + q1->ty) * 0.5f;
+    if (g_cm_focus == 0) { cx = q0->tx; cy = q0->ty; }
+    if (g_cm_focus == 1) { cx = q1->tx; cy = q1->ty; }
+    if (snap || fabsf(cx - g_cam_x) > 0.01f) g_cam_x = cx;
+    if (snap || fabsf(cy - g_cam_y) > 0.01f) g_cam_y = cy;
 
     float zoom = g_dist / 3.6f;
     float dist = cdist * zoom;
