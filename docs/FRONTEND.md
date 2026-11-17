@@ -121,7 +121,16 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - hendikep (2P): a START_GAME 5–6. paramétere (1–8) a konfigurációs blokk 0–1. bájtjába kerül (`0x40bce7`), és
      két ember között a támadó sebzését szorozza 0,7…1,4-gyel (a 4 semleges; lásd `docs/FORMATS.md`, sebzés). A port
      az `options.cfg`-ben tartja (`handicap1`, `handicap2`, alapból 4; az eredeti gyári értéke 3);
-   - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
+   - a meccs után (vereség, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
+   - rekordtábla (`0x4a7b40`, `fight/hiscores.dat`): 10 × 8 bájt, 3 betű, a harcos és az idő (DOS-tick, 18,2 Hz,
+     16.16). A front end minden indulásakor és visszatérésekor az OPT[0..19]-be kerül (`FUN_0043b513`: OPT[i] = a
+     betűk − 'A' a felső három bájtban, a harcos az alsóban; OPT[10+i] = az idő számjegyei P P M M bájtonként), az
+     OPT[20..30] = 2 (`0x4a1d48`). Ha a játékos végigverte a létrát („1 Player HAS BEATEN AI”, `0x413ea7`), a menü
+     2-es belépési móddal indul: G62 = a harcos (16.16), G61 = a harcban töltött összidő számjegyei (`0x4c7320`,
+     menetenként a menet ideje). A szkript ebből dönti el, felkerül-e a táblára; ha igen, a betűrácson nevet kér, a
+     DE (`FUN_0043b5f0`) visszaírja a táblát, és a port elmenti a `hiscores.dat`-ba (a beállítások mellé). Gyári
+     tábla: SIM 10:20, CLV 11:55, DIG 12:17, DAN 12:19, PHL 12:43, HUN 13:02, OWN 13:21, SUE 13:57, ZHR 14:26,
+     JAS 14:34;
    - gombkiosztás: a harci bemenet (`0x428036`) játékosonként 6 gombot olvas a `0x4a588a + 6p` címről: ATTACK
      (előre a kezdőoldalról), RETREAT, JUMP, DUCK, PUNCH, KICK (DirectInput-kódok; bitek 0x01/0x02, 0x08, 0x04, 0x10,
      0x20). Az ATTACK és a RETREAT szerepe felcserélődik, ha a harcosok oldalt cserélnek (`0x4a8300`, a kamerafüggvény
@@ -132,7 +141,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 

@@ -36,7 +36,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 3. ✅ **Harc**: ízületi találati kockák, folyamatos találatvizsgálat, sebzés, blokk, reakciók, dobások (idegen tábla), KO, körök, időzítő, forgó harcvonal, oldalazás, ugrás és kitörés, ringhatár, ringből kiesés, kábulás (`cb3f8`), kombó-skálázás (`0x4aa470`), kiszabadulás nyomkodással (0xCC–0xCE) · ⏳ lábak talajhoz igazítása (`a8290`)
 4. ✅ **HUD és menük**: `boutgfx/*.pix` sprite-ok (az aréna palettájával), `frontend/align.pix` (saját palettás, fejjel lefelé tárolt képek), `back1.pix`,
    betöltőkép, főmenü, karakter- és arénaválasztó, VS, 3 körös meccs, 1 játékos létra · ⏳ opciók menü (BESTO1..7, idő, nehézség, irányítás),
-   folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla
+   folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla (✅ a 3D menüben)
 5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó · ⏳ `.slb` paraméterek (térhatás), menühangok
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
    ⏳ a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)

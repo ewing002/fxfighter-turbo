@@ -86,6 +86,7 @@ static int  g_debug_fight;                      /* started from the command line
 static int  g_round = 1, g_match_over_t;        /* round number, ticks left on the match result */
 static int  g_menu_sel, g_cur[2], g_pick[2], g_arena_sel = 1;
 static int  g_ladder[16], g_nladder, g_ladder_pos;
+static int  g_ladder_ticks;                     /* 1P ladder: fight time so far (0x4c7320), FIGHT_HZ ticks */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 static char g_fname[16][16], g_aname[16][16];   /* fighter / arena names from fi%d.cmp */
 
@@ -100,6 +101,11 @@ static int  g_pad_dir[2][2];                    /* last stick direction per pad 
 static int  g_last_health[2];
 static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
 static void fe_enter(void);
+static void fe_enter_entry(int entry);
+static int32_t time_digits(int secs);
+static void hs_load(void);
+static void hs_to_opt(FeVm *vm);
+static void fe_sys(FeVm *vm, int op, void *user);
 /* endurance (FUN_00419219): two teams of up to 4; after each bout only the loser brings the next
  * fighter, the winner keeps the health he has left; no time limit; the team that runs out loses */
 static int  g_endu;                             /* endurance match running */
@@ -831,12 +837,17 @@ static void pad_rumble_hits(void)
 }
 
 /* ---- options file ---- */
-static void cfg_path(char *out, size_t n)
+/* a file in the settings folder; FX_PREFDIR (tests) points it elsewhere */
+static void pref_file(char *out, size_t n, const char *name)
 {
+    const char *d = getenv("FX_PREFDIR");
+    if (d) { snprintf(out, n, "%s/%s", d, name); return; }
     char *pp = SDL_GetPrefPath("FXFighter", "Turbo");
-    snprintf(out, n, "%soptions.cfg", pp ? pp : "");
+    snprintf(out, n, "%s%s", pp ? pp : "", name);
     if (pp) SDL_free(pp);
 }
+
+static void cfg_path(char *out, size_t n) { pref_file(out, n, "options.cfg"); }
 
 static void cfg_load(void)
 {
@@ -1195,6 +1206,7 @@ static void build_ladder(int player)
         for (int i = g_nladder - 1; i > 0; i--) { int j = rand() % (i + 1), t = g_ladder[i]; g_ladder[i] = g_ladder[j]; g_ladder[j] = t; }
     }
     g_ladder_pos = 0;
+    g_ladder_ticks = 0;
 }
 
 static int vs_opponent(void) { return g_two_players ? g_pick[1] : g_ladder[g_ladder_pos]; }
@@ -1216,6 +1228,14 @@ static void after_match(void)
     if (g_tour) { tour_result(g_fight.winner); return; }
     if (g_fe_ok && g_fe_mode >= 0) {                /* started from the 3D front end */
         if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
+        if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
+            int secs = g_ladder_ticks / FIGHT_HZ;
+            if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
+            g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
+            g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
+            fe_enter_entry(2);
+            return;
+        }
         fe_enter();
         return;
     }
@@ -1252,6 +1272,7 @@ static void endurance_next(void)
 
 static void match_tick(void)
 {
+    if (g_fight.winner < 0 && g_fight.round_age >= g_fight.start_delay && !g_fight_paused) g_ladder_ticks++;   /* 0x445989 */
     if (g_match_over_t > 0) { if (--g_match_over_t == 0) after_match(); return; }
     if (g_endu && g_fight.winner >= 0 && g_fight.over_timer <= 0) { endurance_next(); return; }
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
@@ -1577,6 +1598,9 @@ static int fe3d_shot(const char *path, SDL_Window *win)
     fe_gl_init(&fe);
     static FeVm vm;
     if (!fe_vm_init(&vm, &fe)) { fprintf(stderr, "3D front end: VM init failed\n"); return 1; }
+    vm.sys = fe_sys;
+    hs_load();
+    hs_to_opt(&vm);
     if (getenv("FX_FE_ENTRY")) {                /* testing: FX_FE_G="59=60000,60=40000" (hex), entry mode */
         for (const char *p = getenv("FX_FE_G"); p && *p; ) {
             char *e; int g = (int)strtol(p, &e, 10);
@@ -1686,6 +1710,71 @@ static void fecfg_to_port(void)
     for (int i = 0; i < 12; i++) if (sdl_scan(c[FECFG_KEYS + i])) g_keys[i] = c[FECFG_KEYS + i];
 }
 
+/* ---- high score table (hiscores.dat, 0x4a7b40): 10 x { 3 letters, fighter, time } ----
+ * the time is in DOS timer ticks (18.2 Hz) as 16.16; the scripts see the table in OPT[0..19]
+ * (FUN_0043b513: OPT[i] = letters - 'A' in the top three bytes, fighter in the low one,
+ * OPT[10 + i] = the time as the digits M M S S, one per byte) and write it back by op DE */
+static uint8_t g_hs[80] = {
+    0x53,0x49,0x4d,0x06, 0x84,0xff,0x13,0x2c,  0x43,0x4c,0x56,0x07, 0x71,0xff,0xd4,0x32,
+    0x44,0x49,0x47,0x08, 0xd3,0x65,0x65,0x34,  0x44,0x41,0x4e,0x03, 0x39,0xcc,0x89,0x34,
+    0x50,0x48,0x4c,0x01, 0x01,0x99,0x3e,0x36,  0x48,0x55,0x4e,0x09, 0xca,0x65,0x98,0x37,
+    0x4f,0x57,0x4e,0x02, 0x93,0x32,0xf2,0x38,  0x53,0x55,0x45,0x04, 0xbf,0x65,0x81,0x3b,
+    0x5a,0x48,0x52,0x05, 0x86,0x32,0x91,0x3d,  0x4a,0x41,0x53,0x01, 0xac,0x65,0x42,0x42,
+};
+
+static void hs_path(char *out, size_t n) { pref_file(out, n, "hiscores.dat"); }
+
+static void hs_load(void)
+{
+    char p[1100]; hs_path(p, sizeof p);
+    FILE *f = fopen(p, "rb");
+    if (!f) return;
+    uint8_t b[80];
+    if (fread(b, 1, sizeof b, f) == sizeof b) memcpy(g_hs, b, sizeof b);
+    fclose(f);
+}
+
+static void hs_save(void)
+{
+    char p[1100]; hs_path(p, sizeof p);
+    FILE *f = fopen(p, "wb");
+    if (!f) return;
+    fwrite(g_hs, 1, sizeof g_hs, f);
+    fclose(f);
+}
+
+/* minutes and seconds as digits M M S S (FUN_0043b45e / FUN_0043b7c3) */
+static int32_t time_digits(int secs)
+{
+    int m = secs / 60, sec = secs % 60;
+    if (m > 99) m = 99;
+    return (int32_t)((m / 10) << 24 | (m % 10) << 16 | (sec / 10) << 8 | sec % 10);
+}
+
+static void hs_to_opt(FeVm *vm)
+{
+    for (int i = 0; i < 10; i++) {
+        const uint8_t *e = g_hs + 8 * i;
+        uint32_t t = (uint32_t)(e[4] | e[5] << 8 | e[6] << 16 | e[7] << 24);
+        vm->OPT[i] = (int32_t)((uint32_t)(e[0] - 'A') << 24 | (uint32_t)(e[1] - 'A') << 16 | (uint32_t)(e[2] - 'A') << 8 | e[3]);
+        int m = (int)(t / 0x443fff4u), sec = (int)((t - (uint32_t)m * 0x443fff4u) / 0x123333u);
+        vm->OPT[10 + i] = time_digits((m > 99 ? 99 : m) * 60 + (sec > 59 ? 59 : sec));
+    }
+    for (int i = 0; i < 11; i++) vm->OPT[20 + i] = 2;   /* FUN_0043b77b: 0x4a1d48 (fight.prf), always 2 */
+}
+
+static void opt_to_hs(const FeVm *vm)                   /* FUN_0043b5f0 (op DE) */
+{
+    for (int i = 0; i < 10; i++) {
+        uint8_t *e = g_hs + 8 * i;
+        uint32_t o = (uint32_t)vm->OPT[i], d = (uint32_t)vm->OPT[10 + i];
+        e[0] = (uint8_t)((o >> 24) + 'A'); e[1] = (uint8_t)((o >> 16) + 'A'); e[2] = (uint8_t)((o >> 8) + 'A'); e[3] = (uint8_t)o;
+        uint32_t m = (d >> 24 & 0xff) * 10 + (d >> 16 & 0xff), sec = (d >> 8 & 0xff) * 10 + (d & 0xff);
+        uint32_t t = m * 0x443fff4u + sec * 0x123333u;
+        e[4] = (uint8_t)t; e[5] = (uint8_t)(t >> 8); e[6] = (uint8_t)(t >> 16); e[7] = (uint8_t)(t >> 24);
+    }
+}
+
 /* system ops of the scripts (see FeVmSysFn). Like the original, the options are saved only
  * by the SAVE item and read back by LOAD; the volumes follow the sliders live. */
 static void fe_sys(FeVm *vm, int op, void *user)
@@ -1696,6 +1785,7 @@ static void fe_sys(FeVm *vm, int op, void *user)
     case 0xd9: case 0xdd: fecfg_to_port(); cfg_apply(); cfg_save(); break;           /* SAVE */
     case 0xdf: g_cfg.sfx = vol_sync(g_cfg.sfx, vm->cfg[FECFG_SVOL]); sfx_set_volume((float)g_cfg.sfx / 10.0f); break;
     case 0xe0: g_cfg.music = vol_sync(g_cfg.music, vm->cfg[FECFG_CDVOL]); music_set_volume((float)g_cfg.music / 10.0f); break;
+    case 0xde: opt_to_hs(vm); hs_save(); break;                                      /* high scores */
     default: break;
     }
 }
@@ -1710,19 +1800,25 @@ static int fe_load(void)
         return 0;
     }
     g_vm.sys = fe_sys;
+    hs_load();
+    hs_to_opt(&g_vm);
     fe_gl_init(&g_fe);
     return 1;
 }
 
-static void fe_enter(void)
+/* back to the 3D front end; entry type (G58): 0 main menu, 2 the 1P ladder was beaten */
+static void fe_enter_entry(int entry)
 {
     g_fe_mode = -1; g_endu = 0; g_tour = g_tour_vs = 0; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
     port_to_fecfg();
-    fe_vm_restart(&g_vm, 0);
+    hs_to_opt(&g_vm);                            /* 0x413cf9: on every return */
+    fe_vm_restart(&g_vm, entry);
     memset(g_fe_latch, 0, sizeof g_fe_latch);
     g_fe_ticks = 0;
     set_state(ST_FE3D);
 }
+
+static void fe_enter(void) { fe_enter_entry(0); }
 
 /* ---- tournament (FUN_00431676) ---- */
 static const int8_t TN_NEXT[20] = { -1, 0, 1, 2, 5, 3, 7, 4, 9, 10, 11, 6, -1, -1, -1, -1, -1, -1, -1, -1 };
