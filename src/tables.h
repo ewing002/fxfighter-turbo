@@ -2,6 +2,20 @@
 #ifndef FX_TABLES_H
 #define FX_TABLES_H
 
+/* 0x4a4ac0: 1 = hit reaction move (StartMove sets cb4c8): a hit landing during one is a
+ * combo hit with scaled damage and stun (0x448cbb). Indexed by move id < 0x80. */
+static const unsigned char REACT_MOVE[128] = {
+  0,0,0,0,0,1,0,0,0,0,0,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+  0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1, 1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,
+};
+/* 0x4aa470: damage / stun factor of the n-th combo hit */
+static const float COMBO_SCALE[20] = {
+  0.2f, 0.15f, 0.1f, 0.05f, 0.02f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f,
+  0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f, 0.01f,
+};
+
 /* 0x4aa510: attacker limb sets, indexed by move byte 0x14: {count, parts...} */
 static const unsigned char LIMB_SETS[24][17] = {
   {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},

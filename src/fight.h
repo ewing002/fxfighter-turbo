@@ -59,7 +59,9 @@ typedef struct {
     char  name[16], arena[16];
     float fall_depth;        /* 0x4c  floor height outside the ring (16.16)  */
     float ring_half;         /* 0x54  half size of the square ring           */
-    float stun_k;            /* 0x58                                         */
+    float stun_k;            /* 0x58  stun per damage point                  */
+    float stun_decay;        /* 0x5c  stun -= 5 * stun_decay per tick        */
+    int   mash[3];           /* 0x60 0x64 0x68  input changes needed by ops 0xcc (half) / 0xcd / 0xce */
     float jump_v, jump_g, jump_s;   /* 0x6c 0x70 0x74 jump arc               */
     float body_r[6];         /* 0x78  body radius per move class             */
     float part_r[16];        /* 0x88  hit cube half-size per body part (/256) */
@@ -86,6 +88,10 @@ typedef struct {
     int    ai_wait, ai_armed;  /* a5788 / f1604: idle delay (8 - level ticks) in neutral moves */
     int    guard;          /* a8278: current guard op (>= 0xf1), 0 when not blocking */
     int    ai_def, ai_def_hi;  /* a5780 / a5784: keep defending this long, side (bit 6) of the attack */
+    float  stun;           /* cb3f8: dizzy meter, 0..64 between hits, > 75 after a hit = dazed */
+    int    in_react;       /* cb4c8: playing a hit reaction (next hit is a combo hit) */
+    int    combo;          /* c6f08: combo hit counter of this victim (index into COMBO_SCALE) */
+    int    mash;           /* cb460: input changes counted for ops 0xcc..0xce (break free) */
     int    last_fwd;
     int    hit_flash;
     int    wins;

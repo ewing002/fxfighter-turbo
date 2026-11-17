@@ -30,13 +30,13 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 1. ✅ **Asset-néző**: modellek, textúrák, arénák, animációk
 2. ✅ **Mozdulatrendszer** (kész: `src/fight.c`): a `moves/*.hdr` 16 bájtos paraméterei (klipindex, framek, sebzés, hitbox?), a `.ste` állapotgép, az input → mozdulat leképezés.
    Ehhez a `Fight.c` függvényeit kell visszafejteni, amelyek a `moves` adatokat olvassák (a `fight/moves/f%d.hdr` sztring xref-jeiből kiindulva).
-3. ✅ **Harc**: ízületi találati kockák, folyamatos találatvizsgálat, sebzés, blokk, reakciók, dobások (idegen tábla), KO, körök, időzítő, forgó harcvonal, oldalazás, ugrás és kitörés, ringhatár, ringből kiesés · ⏳ kábulás (`cb3f8`), lábak talajhoz igazítása (`a8290`)
+3. ✅ **Harc**: ízületi találati kockák, folyamatos találatvizsgálat, sebzés, blokk, reakciók, dobások (idegen tábla), KO, körök, időzítő, forgó harcvonal, oldalazás, ugrás és kitörés, ringhatár, ringből kiesés, kábulás (`cb3f8`), kombó-skálázás (`0x4aa470`), kiszabadulás nyomkodással (0xCC–0xCE) · ⏳ lábak talajhoz igazítása (`a8290`)
 4. ✅ **HUD és menük**: `boutgfx/*.pix` sprite-ok (az aréna palettájával), `frontend/align.pix` (saját palettás, fejjel lefelé tárolt képek), `back1.pix`,
    betöltőkép, főmenü, karakter- és arénaválasztó, VS, 3 körös meccs, 1 játékos létra · ⏳ opciók menü (BESTO1..7, idő, nehézség, irányítás),
    folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla
 5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó · ⏳ `.slb` paraméterek (térhatás), menühangok
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
-   ⏳ gombnyomogatásos kiszabadulás (0xCC–0xCE), kábulás-bit, a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)
+   ⏳ a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)
 7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó.
 
 ## Ismert hibák
@@ -47,7 +47,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 - Az ugrás íve most az eredeti képlet (FUN_00440f42: (t·v + t²·g/2)·s + 0,3), kb. 1,4 m magas. A talajhoz igazítás a modellek legalsó csúcspontját használja, így a talp a padlón áll.
 - Ugrás közben a harcos nem jut ki a ringből (saját döntés); ütés, dobás vagy kilépés után továbbra is ki lehet esni.
 - A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.
-- A kábulás (dizzy) mechanikája még hiányzik.
+- A kábulás (`f1a48 = 0x17f`, valószínűleg csillag-effekt vagy hang) látványeleme még hiányzik, csak a mechanika van meg.
 - A portrék és a harcosok összerendelése szemre történt; a PLYR2 = Linna és a PLYR9 = Kwondo bizonytalan.
 - Jerzan (fm12.dat, `pan_cr12`) nem hiba: az eredeti létratáblájában nem szerepel, a modelljének teste szándékosan pontnyira zsugorított. Kimarad a létrából, ahogy az eredetiben.
 - A menük elrendezése az eredeti grafikákra épül, de a pontos pozíciókat (winfront.c) még nem fejtettem vissza.

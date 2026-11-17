@@ -18,6 +18,7 @@
 #define MOVE_RO_BACK  7
 #define MOVE_RO_HEAD  9
 #define MOVE_RO_FEET  10
+#define MOVE_DAZE     0x68     /* FLYING FALL 2 DAZE */
 #define CUR(pl)       ((pl)->cur ? (pl)->cur : (pl)->ms)
 #define TICK_T        (1.0f / 32.0f)   /* movement time step: (ticks/frame) / 32 */
 
@@ -66,6 +67,8 @@ int fighter_info_load(FighterInfo *fi, const uint8_t *src, size_t n)
     fi->fall_depth = (float)fd / 65536.0f;
     fi->ring_half = rdf32le(d + 0x54);
     fi->stun_k = rdf32le(d + 0x58);
+    fi->stun_decay = rdf32le(d + 0x5c);
+    for (int k = 0; k < 3; k++) { int32_t v; memcpy(&v, d + 0x60 + 4 * k, 4); fi->mash[k] = v; }
     fi->jump_v = rdf32le(d + 0x6c); fi->jump_g = rdf32le(d + 0x70); fi->jump_s = rdf32le(d + 0x74);
     for (int k = 0; k < 6; k++) fi->body_r[k] = rdf32le(d + 0x78 + 4 * k);
     for (int k = 0; k < 16; k++) fi->part_r[k] = (float)d[0x88 + k] / 256.0f;
@@ -272,6 +275,9 @@ static void start_move_t(Fight *f, int i, int m, int owner)
     }
     p->last_fwd = root_fwd(p);
     set_mode_from_op(f, i, rec(p, p->sp)->op, 1);
+    p->in_react = m < 128 && REACT_MOVE[m];
+    unsigned op0 = rec(p, p->sp)->op;
+    if (op0 < 0xcc || op0 > 0xce) p->mash = 0;     /* break-free count survives only into another 0xcc..0xce move */
     fighter_sound(f, i, ms->moves[m].sound);
 }
 
@@ -378,6 +384,7 @@ static void process_events(Fight *f, int i)
             if ((cur_move(o)->stance & 0x3f) != 8 && !o->ringout) {
                 start_move_t(f, i ^ 1, n->tgt, i);
                 start_move(f, i, r->tgt);
+                o->in_react = 1;                  /* cb4c8 = -1: hits during the throw are combo hits */
                 return;
             }
         } else {
@@ -390,6 +397,11 @@ static void process_events(Fight *f, int i)
             else if (op >= 100 && op < 150) p->health -= (int)op - 100;
             else if (op >= 150 && op < 200) p->health -= (int)op - 150;
             else if (op >= 0xd0 && op <= 0xd2) set_mode_from_op(f, i, op, 0);
+            else if (op >= 0xcc && op <= 0xce) {      /* break free: enough input changes so far */
+                int need = p->fi ? p->fi->mash[op - 0xcc] : 25;
+                if (op == 0xcc) need /= 2;
+                if (p->mash >= need) { p->mash = 0; start_move(f, i, r->tgt); return; }
+            }
             else if (op == 0xd4) p->cont_hit = -1;
             else if (op == 0xd8) p->turn_flag ^= 1;
             else if (op == 0xd9) p->solid ^= 1;
@@ -489,13 +501,29 @@ static void resolve_hit(Fight *f, int i)
     if (v->health <= dmg) idx |= 4;
     int react = table[idx & 127];
     if (!react) return;
+    int was_react = v->in_react;                   /* local_10: already reeling from a hit = combo hit */
+    int vcls = cur_move(v)->cls;
     start_move(f, i ^ 1, react);
     /* knock back 0.1 / 0.2 / 0.3 by hit direction */
     if (dir < 3) push_apart(f, i ^ 1, 0.1f * (float)(dir + 1));
     if (rec(v, v->sp)->op < 0xfa) {
-        v->health -= dmg;
+        float k = v->fi ? v->fi->stun_k : 3.f;
+        if (!was_react) {                          /* clean hit: full damage and stun */
+            v->combo = 0;
+            v->stun += k * (float)dmg;
+            v->health -= dmg;
+        } else {                                   /* combo hit: scaled by 0x4aa470 */
+            float sc = COMBO_SCALE[v->combo];
+            v->stun += k * sc * (float)dmg;
+            v->health -= (int)(sc * (float)dmg);
+            if (++v->combo > 19) v->combo = 19;
+        }
         if (v->health < 0) v->health = 0;
         v->hit_flash = 8;
+    }
+    if (v->stun > 75.f && v->health > 0) {         /* dazed (0x496b98) */
+        v->stun = 0;
+        if (vcls != 3) start_move(f, i ^ 1, MOVE_DAZE);
     }
     /* swinging attacks (attack type 1 / 2) turn the fight line around the attacker */
     if (type == 1 || type == 2)
@@ -516,6 +544,7 @@ static const int     AI_MUL[5][6]  = {                                /* 0x4a56a
 static const uint8_t AI_ATTACK_P[8] = { 3, 4, 5, 6, 7, 8, 9, 10 };     /* 0x4a5720: rand & 15 <= p */
 static const uint8_t AI_DEFEND_P[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };/* 0x4a5728 */
 static const uint8_t AI_SIT_W[7]    = { 3, 3, 5, 8, 3, 2, 2 };         /* 0x4a5778 */
+static const uint8_t AI_MASH[8]     = { 1, 1, 1, 2, 2, 2, 3, 4 };      /* 0x4a5790: break-free count per tick */
 
 static int ai_level(const Fight *f) { return f->ai_level < 0 ? 0 : f->ai_level > 7 ? 7 : f->ai_level; }
 
@@ -538,7 +567,7 @@ static unsigned ai_situation(const Fight *f, int o)
     if (m->cls == 2) s |= 0x01;                   /* crouching */
     if (m->cls == 1) s |= 0x02;                   /* in the air / falling */
     if (m->cls == 3) s |= 0x04;                   /* on the floor */
-    /* 0x08: dizzy (cb3f8) - not emulated yet */
+    if (f->p[o].stun != 0) s |= 0x08;             /* dizzy meter not empty (cb3f8) */
     if (f->p[o].guard) s |= 0x10;                 /* blocking (a8278) */
     if ((m->ai[0] & 3) == 1) s |= (m->ai[0] & 0x40) ? 0x20 : 0x40;   /* attacking high / low */
     /* 0x80: 0x424d8f(o, 0) is always 0 */
@@ -666,7 +695,8 @@ static int ai_think(Fight *f, int i)
     int threat = ai_threat(f, i, &p->ai_def_hi);
     unsigned sit = ai_situation(f, i ^ 1);
     int ohi = (cur_move(o)->ai[0] >> 6) & 1;
-    /* ops 0xcc..0xce (break free by button mashing) are not emulated by the engine yet */
+    unsigned cop = rec(p, p->sp)->op;             /* waiting on a break-free op: mash instead of acting */
+    if (cop >= 0xcc && cop <= 0xce) { p->mash += AI_MASH[lv]; return 0; }
     if ((cur_move(p)->ai[0] & 3) == 0) {          /* neutral move: wait 8 - level ticks */
         if (!p->ai_armed && !p->ai_wait) { p->ai_wait = 8 - lv; p->ai_armed = 1; }
         if (p->ai_wait) { p->ai_wait--; return 0; }
@@ -902,6 +932,7 @@ void fight_reset(Fight *f)
         p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0;
         p->radius = 0.3f;
         p->ringout = 0; p->vz = 0; p->have_prev_box = 0;
+        p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0;
         f->hit_pending[i] = 0;
     }
     for (int i = 0; i < 2; i++) start_move(f, i, MOVE_STAND);
@@ -915,6 +946,7 @@ void fight_tick(Fight *f)
     for (int i = 0; i < 2; i++) ring_out_check(f, i);
     for (int i = 0; i < 2; i++) {
         Player *p = &f->p[i];
+        if (p->in != p->prev_in) p->mash++;       /* 0x44176b: every input change counts for breaking free */
         process_events(f, i);
         if (p->cont_hit > 0 && hit_test(f, i, damage_of(p, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
         unsigned op = rec(p, p->sp)->op;          /* a8278: guard state seen by the CPU opponent */
@@ -945,6 +977,12 @@ void fight_tick(Fight *f)
     }
     spacing(f);
     for (int i = 0; i < 2; i++) ring_edge(f, i);
+    for (int i = 0; i < 2; i++) {                 /* dizzy meter recovers (around 0x4f1b..., per frame) */
+        Player *p = &f->p[i];
+        p->stun -= 5.f * (p->fi ? p->fi->stun_decay : 0.4f);
+        if (p->stun > 64.f) p->stun = 64.f;
+        if (p->stun < 0.f) p->stun = 0.f;
+    }
 
     /* round logic (announcer: generic.fxl, FUN_00444b60 area) */
     f->round_age++;

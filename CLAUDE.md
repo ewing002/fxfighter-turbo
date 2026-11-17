@@ -64,9 +64,9 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 - AI: nem gombot nyom, hanem átmenetet választ a mozdulatfejléc 0x19–0x20-as bájtjai alapján. Részletek: `docs/FORMATS.md`.
 
 ## Nyitott feladatok (prioritás szerint)
-1. **AI apróságok:** az eredeti AI kész. Hiányzik a gombnyomogatásos kiszabadulás (0xCC–0xCE), a kábulás-bit és a `0x424d8f` pontos eltolása. A 13-as harcos a szimulátorban összeomlik.
+1. **AI apróságok:** az eredeti AI kész. A `0x424d8f` pontos eltolása hiányzik. A 13-as harcos a szimulátorban összeomlik.
 2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
-3. **Kábulás (dizzy):** `cb3f8` körül, még nincs benne.
+3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Az effektje (`f1a48`) hiányzik.
 4. **Kamera:** a pálya szélén használt külön nézet és a SAT/CAR/SIDE nézetek hiányoznak.
 5. **Menük:** a `winfront.c` pontos elrendezése nincs visszafejtve, a pozíciók szemre vannak.
 6. **Folytatás, stáblista, rekordtábla, FMV:** nincs kész.

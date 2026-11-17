@@ -143,6 +143,15 @@ A támadó csoport kockáinak uniója kerül összevetésre az áldozat [Skull, 
 kockáival, sorrendben. A zóna a talált kocka középpontjának Z-je: < 0,4 alacsony, < 1,0 közép, egyébként magas.
 A 0xD4-es opkód után a következő támadó esemény "folyamatos": a vizsgálat minden tickben megismétlődik, amíg talál vagy véget ér a mozdulat.
 Sebzés = `op × fi[0x40] × fi[0x44] × nehézségi szorzó` (gyakorlatilag az `op`). Visszalökés: 0,1 / 0,2 / 0,3 az irány (`cond>>6`) szerint.
+**Kombó** (`0x448cbb`): ha az áldozat a találat előtt reakciómozdulatban volt (`0x4a4ac0` jelzőtábla, a StartMove a `cb4c8`-ba írja),
+a sebzés és a kábulás az n-edik kombótalálatnál `0x4aa470[n]`-szeres (0,2 / 0,15 / 0,1 / 0,05 / 0,02, utána 0,01). Tiszta találatnál n = 0-ra áll.
+**Kábulás** (`cb3f8`): tiszta találat `fi[0x58] × sebzés` pontot ad (3,0). Tickenként `5 × fi[0x5c]` pont fogy (2,0),
+és tickenként 0 és 64 közé van szorítva. Ha egy találat után 75 fölött van, és az áldozat él, az érték nullázódik,
+és (ha nem fekszik) a 0x68-as „FLYING FALL 2 DAZE” mozdulat indul. Utána GETTING UP DAZED → DAZE START → DAZE LOOP 1–3 → DAZE END.
+**Kiszabadulás** (0xCC / 0xCD / 0xCE esemény): ha az eddigi bemenetváltások száma (`cb460`) eléri a `fi[0x60] / 2`, `fi[0x64]`,
+illetve `fi[0x68]` értéket (12 / 25 / 25), azonnal a rekord céljára vált. A számláló minden olyan tickben nő, amikor a bemenet
+változik. A StartMove nullázza, kivéve ha az új mozdulat első rekordja is 0xCC–0xCE. A CPU ilyenkor nem lép,
+hanem tickenként `0x4a5790[szint]`-et ad a számlálóhoz. A DAZE LOOP 1 és 2 elején van 0xCC: kitartó nyomkodással kimaradnak a további körök.
 Az 1-es és 2-es támadástípus (`stance >> 6`) a teljes harcvonalat elforgatja a támadó körül `−(sebzés << 7)` br_angle-lel.
 A reakció indexe: `(támadástípus>>3) | zóna<<5 | irány | (halálos ? 4 : 0)`, ezzel a 128 elemes `REACT_*` táblákból jön az áldozat következő mozdulata.
 Dobás: a `cond == 8` esemény az áldozatot a **dobó táblájából** indítja (`StartMove(p+2)`); a 0xCB lezáró rekord
@@ -159,8 +168,9 @@ RLE, utána **minden bájtból 1-et le kell vonni**. 584 bájt. Az *n*-edik blok
 | 0x40, 0x44 | sebzésszorzók (16.16) |
 | 0x4c | a padló mélysége a ringen kívül (16.16, pl. −0,6) |
 | 0x54 | a ring félmérete (float, 5,04; a gyakorló arénában 2,52) |
-| 0x58 | kábulási szorzó |
-| 0x60–0x68 | időzítők |
+| 0x58 | kábulási szorzó (3,0) |
+| 0x5c | kábulás csökkenése (0,4; tickenként ×5) |
+| 0x60, 0x64, 0x68 | kiszabaduláshoz szükséges bemenetváltások a 0xCC (fele) / 0xCD / 0xCE eseményhez (25) |
 | 0x6c, 0x70, 0x74 | ugrási ív: v0, g, skála |
 | 0x78 + 4·osztály | testsugár mozdulatosztályonként (0,3 / 0,3 / 0,5 / 0,6) |
 | 0x88 + testrész | találati kocka fél élhossza ×256 |
