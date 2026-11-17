@@ -8,11 +8,11 @@
 #include "fe3d.h"
 
 /* One actor of the front end scene. Units as BRender sees them: position in world units
- * (strat units / 1000), rotation in degrees, uniform scale (strat 256 = 1.0). The matrix is
+ * (strat units / 1000), rotation in degrees, scale per axis (strat 256 = 1.0). The matrix is
  * Scale (pre) * RotY * RotX * RotZ, then the translation, then the parent's matrix. */
 typedef struct {
     int   type;          /* model type (index into the 0x4a2948 table), -1 = no model */
-    float pos[3], rot[3], scale;
+    float pos[3], rot[3], scale[3];
     int   parent;        /* index of the parent actor, -1 = world root */
     int   world;         /* 0 main, 1 right panel, 2 left panel */
     int   hidden;

@@ -84,7 +84,7 @@ static void node_matrix(const FeNode *n, M43 out)
     m_mul(out, ry, rx);
     m_mul(out, out, rz);
     out[3][0] = n->pos[0]; out[3][1] = n->pos[1]; out[3][2] = n->pos[2];
-    m_ident(s); s[0][0] = s[1][1] = s[2][2] = n->scale;
+    m_ident(s); s[0][0] = n->scale[0]; s[1][1] = n->scale[1]; s[2][2] = n->scale[2];
     m_mul(out, s, out);
 }
 

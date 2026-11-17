@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 find_package(SDL2 REQUIRED)
 find_package(OpenGL REQUIRED)
 
-add_executable(fxfighter WIN32 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c)
+add_executable(fxfighter WIN32 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c)
 target_include_directories(fxfighter PRIVATE ${SDL2_INCLUDE_DIRS})
 if(TARGET SDL2::SDL2)
   target_link_libraries(fxfighter PRIVATE SDL2::SDL2main SDL2::SDL2 OpenGL::GL)
@@ -17,10 +17,12 @@ if(NOT MSVC)
   target_compile_options(fxfighter PRIVATE -Wall -Wextra -O2)
 endif()
 
-# headless checks (no SDL): fight simulator and the 3D front end asset check
+# headless checks (no SDL): fight simulator, the 3D front end asset check and its script VM
 add_executable(fightsim tests/fightsim.c src/fight.c src/assets.c)
 add_executable(fecheck tests/fecheck.c src/fe3d.c src/assets.c)
+add_executable(fevm tests/fevm.c src/fe3d_vm.c src/fe3d.c src/assets.c)
 if(NOT MSVC)
   target_link_libraries(fightsim PRIVATE m)
   target_link_libraries(fecheck PRIVATE m)
+  target_link_libraries(fevm PRIVATE m)
 endif()

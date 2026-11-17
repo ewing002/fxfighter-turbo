@@ -65,8 +65,24 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    textúrák, és a bájtkód beolvasása futás közben a felhasználó `FIGHT.EXE`-jéből (a repóba nem kerül eredeti kód).
 3. ✅ **Álló jelenet** (`src/fe3d_gl.c`, `--screen fe3d`; az oldalsó párhuzamos kamera magassága adja a 442 px-t, négyzetes pixelekkel – a portréhenger pontosan kitölti a panelt): a három nézet (fő perspektivikus, két párhuzamos oldalsó), `back1.pix` háttér, fények;
    próbaként a főmenü kézzel elhelyezve a táblák alapján. Képernyőképpel ellenőrizve.
-4. **Szkript-VM:** objektumkészlet hierarchiával, kb. 70 műveleti kód, verem, triggerek, 15 Hz-es tick.
-   A hálózati műveletek (E1–E3) csonkok („nincs hálózat”).
+4. ✅ **Szkript-VM** (`src/fe3d_vm.c`, fej nélküli teszt: `tests/fevm.c`; a `--screen fe3d` már a VM jelenetét
+   rajzolja, `FX_FE_TICKS` tick és `FX_FE_INPUT` bemenet-szkript után): 512 objektum hierarchiával, verem,
+   triggerek, 15 Hz-es tick. A 93 szkript ténylegesen 112 műveleti kódot használ, ezek mind megvannak; további
+   kb. 40 (fordulás, követés, sebességfizika) a visszafejtésből készült, de egyik szkript sem használja, így
+   ellenőrizetlen. Ellenőrizve: üresjáratban felépül a főmenü; a kurzor mozog; az OPTIONS megnyílik és
+   bezárul; az 1P-indítás `START_GAME mode 1`-et ad; kb. 61 s tétlenség után demó (mode 0; a gyökérszkript
+   30×30 tickig számol, nem 30 s-ig); véletlen bemenettel 50 000 tick alatt az 1–4. és 6–9. mód mind
+   előáll, szkripthiba nélkül. Csonkok és eltérések:
+   - hálózat: E1 = 0, E2 = −1, E3/E8 üres („nincs hálózat”, az 5. mód így elérhetetlen);
+   - E4 (nyers billentyű): az eredeti blokkol, itt a művelet a következő tickben újrapróbál
+     (`fe_vm_key_raw`, DirectInput-kódok);
+   - kamerák (0x96, 0x2A): nincs hatásuk, a renderelő kamerái rögzítettek;
+   - háttér (0x97): csak feljegyzés (`bg[]`), a felső doboz textúracseréje még nincs bekötve;
+   - rendszerműveletek (D8–E0, E9/EA, EC/ED): a cfg ↔ G átírást a VM végzi, a fájl-, hangerő- és
+     zenekezelés a gazdára vár (`sys` visszahívás);
+   - a 12/13-as triggertípusok nem sülnek el, ütközés nincs (egy szkript sem állít maszkot);
+   - a világpozíció függvény az eredetihez hűen 1/10 szkriptegységet ad;
+   - a méret tengelyenkénti (a középső doboz 256/128/128), ezért `FeNode.scale[3]`.
 5. **Összekötés:** bemenet → slotok, G20–G57 ↔ a port beállításai, 0xD7 → a port meccsindítása,
    hangok a `frontend` bankból, gombok átállítása (E4/E5/EB).
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
