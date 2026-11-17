@@ -60,7 +60,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
 ## 4. Terv (kis lépésekben)
 
 1. ✅ Felderítés, eszközök (`tools/stratdis.py`, `tools/menutab.py`, `tools/pe.py`).
-2. **Eszközök a C-oldalon:** `crshipl1.dat` modellek, `demo.mat` anyagok, `demo.pal` + `demo.pix` / `align.pix`
+2. ✅ **Eszközök a C-oldalon** (`src/fe3d.c`, ellenőrzés: `tests/fecheck.c`; 210 modell, 246 anyag, ebből 235 textúrás – a hiányzó 11 az eredetiben sem létezik –, 93 szkript, 212 modelltípusból 208 párosítva): `crshipl1.dat` modellek, `demo.mat` anyagok, `demo.pal` + `demo.pix` / `align.pix`
    textúrák, és a bájtkód beolvasása futás közben a felhasználó `FIGHT.EXE`-jéből (a repóba nem kerül eredeti kód).
 3. **Álló jelenet:** a három nézet (fő perspektivikus, két párhuzamos oldalsó), `back1.pix` háttér, fények;
    próbaként a főmenü kézzel elhelyezve a táblák alapján. Képernyőképpel ellenőrizve.
