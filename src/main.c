@@ -86,8 +86,8 @@ static int  g_bank0_front;                      /* sound bank 0 holds frontend.f
 static char g_fname[16][16], g_aname[16][16];   /* fighter / arena names from fi%d.cmp */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1 };
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4 };   /* difficulty: CPU level 0..7 (0x4a587c) */
 static SDL_Window *g_win;
 static int  g_opt_sel, g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
@@ -789,6 +789,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "round_time")) g_cfg.round_secs = (v == 30 || v == 90 || v == 99 || v == -1) ? v : 60;
         else if (!strcmp(k, "ringouts")) g_cfg.ringouts = v != 0;
         else if (!strcmp(k, "rumble")) g_cfg.rumble = v != 0;
+        else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
     }
     fclose(f);
 }
@@ -798,8 +799,9 @@ static void cfg_save(void)
     char p[1100]; cfg_path(p, sizeof p);
     FILE *f = fopen(p, "w");
     if (!f) return;
-    fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\n",
-            g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble);
+    fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\ndifficulty=%d\n",
+            g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
+            g_cfg.difficulty);
     fclose(f);
 }
 
@@ -813,6 +815,7 @@ static void cfg_apply(void)
     music_set_volume((float)g_cfg.music / 10.0f);
     sfx_set_volume((float)g_cfg.sfx / 10.0f);
     g_ringouts = g_cfg.ringouts;
+    g_fight.ai_level = g_cfg.difficulty;
 }
 
 /* Game camera (FUN_004231c0): perpendicular to the fight line, distance and height from the
@@ -1003,6 +1006,7 @@ static void begin_match(int p1, int p2, int arena, int cpu1, int cpu2)
     g_fight.start_delay = FIGHT_HZ * 22 / 10;      /* ROUND n ... FIGHT! */
     g_fight.round_secs = g_cfg.round_secs;
     g_ringouts = g_cfg.ringouts;
+    g_fight.ai_level = g_cfg.difficulty;
     g_fight_paused = 0;
     g_round = 1; g_match_over_t = 0;
     g_game = 1; g_yaw = -1.5708f; g_pitch = 0.28f; g_dist = 3.6f;
@@ -1088,8 +1092,8 @@ static int random_fighter(void)
 }
 
 /* ---- options screen ---- */
-enum { OPT_DISPLAY, OPT_VSYNC, OPT_MUSIC, OPT_SFX, OPT_ROUNDS, OPT_TIME, OPT_RINGOUT, OPT_RUMBLE, OPT_BACK, OPT_N };
-static const char *OPT_LABEL[OPT_N] = { "DISPLAY", "VSYNC", "MUSIC", "SOUND FX", "ROUNDS", "ROUND TIME", "RING OUT", "RUMBLE", "BACK" };
+enum { OPT_DISPLAY, OPT_VSYNC, OPT_MUSIC, OPT_SFX, OPT_ROUNDS, OPT_TIME, OPT_RINGOUT, OPT_DIFF, OPT_RUMBLE, OPT_BACK, OPT_N };
+static const char *OPT_LABEL[OPT_N] = { "DISPLAY", "VSYNC", "MUSIC", "SOUND FX", "ROUNDS", "ROUND TIME", "RING OUT", "DIFFICULTY", "RUMBLE", "BACK" };
 
 static void option_value(int i, char *out, size_t n)
 {
@@ -1101,6 +1105,7 @@ static void option_value(int i, char *out, size_t n)
     case OPT_ROUNDS:  snprintf(out, n, "BEST OF %d", g_cfg.rounds); break;
     case OPT_TIME:    if (g_cfg.round_secs < 0) snprintf(out, n, "NO LIMIT"); else snprintf(out, n, "%d", g_cfg.round_secs); break;
     case OPT_RINGOUT: snprintf(out, n, "%s", g_cfg.ringouts ? "ON" : "OFF"); break;
+    case OPT_DIFF:    snprintf(out, n, "%d", g_cfg.difficulty + 1); break;
     case OPT_RUMBLE:  snprintf(out, n, "%s", g_cfg.rumble ? "ON" : "OFF"); break;
     default: out[0] = 0;
     }
@@ -1119,6 +1124,7 @@ static void option_change(int i, int d)
         int k = 1; for (int j = 0; j < 5; j++) if (times[j] == g_cfg.round_secs) k = j;
         g_cfg.round_secs = times[(k + d + 5) % 5]; break; }
     case OPT_RINGOUT: g_cfg.ringouts = !g_cfg.ringouts; break;
+    case OPT_DIFF:    g_cfg.difficulty = (g_cfg.difficulty + d + 8) % 8; g_fight.ai_level = g_cfg.difficulty; break;
     case OPT_RUMBLE:
         g_cfg.rumble = !g_cfg.rumble;
         for (int p = 0; p < 2; p++) if (g_cfg.rumble && g_pad[p]) SDL_GameControllerRumble(g_pad[p], 0x8000, 0x8000, 200);
@@ -1265,7 +1271,7 @@ static void render_front(int w, int h)
     } else if (g_state == ST_OPTIONS) {
         ui_draw_c(ui_sprite("OPTIONS"), 320, 78, 1, 1);
         for (int i = 0; i < OPT_N; i++) {
-            float y = 118.f + (float)i * 34.f + (i == OPT_BACK ? 10.f : 0.f);
+            float y = 116.f + (float)i * 32.f + (i == OPT_BACK ? 10.f : 0.f);
             int sel = i == g_opt_sel;
             float a = sel ? 1.f : 0.6f;
             if (sel) ui_rect(178, y - 5, 462, y + 17, 0.15f, 0.25f, 0.6f, 0.55f);

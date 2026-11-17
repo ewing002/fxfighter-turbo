@@ -34,7 +34,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
    betöltőkép, főmenü, karakter- és arénaválasztó, VS, 3 körös meccs, 1 játékos létra · ⏳ opciók menü (BESTO1..7, idő, nehézség, irányítás),
    folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla, Jerzan (12. harcos) mint főellenség
 5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó · ⏳ `.slb` paraméterek (térhatás), menühangok
-6. ◐ **AI**: most egy egyszerű helyettesítő AI van. Az eredeti a `0x425892`-ben található (az AI-átmenetek `val=0x00FF` jelűek, nehézségi szint, véletlen).
+6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
+   ⏳ gombnyomogatásos kiszabadulás (0xCC–0xCE), kábulás-bit, a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)
 7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó.
 
 ## Ismert hibák

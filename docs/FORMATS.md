@@ -98,7 +98,10 @@ Betöltő: `0x433120`. A P1 táblái a `0x4d6390`-es (mozdulatok) és a `0x4ccd9
 | 0x16 | osztály (3 = földön) |
 | 0x17 | animáció: ≥200 → a saját `f%d.ani` (érték−200)-adik klipje, <200 → a közös `f0.ani` klipje, 255 → nem vált |
 | 0x18 | hang |
-| 0x19 | jelzők (AI-hoz) |
+| 0x19 | AI-jelzők: bit 0–1 = fajta (1 támadás, 2 blokk, 3 megfordulás), 0x0C = ringszél-vizsgálat, 0x40 = magas, 0x80 = az AI sosem választja |
+| 0x1A–0x1E | AI-pontszám az 1–5. helyzet-slotban |
+| 0x1F | helyzetmaszk (melyik ellenfél-helyzetben erősebb, l. lent) |
+| 0x20 | ennyi képkocka kell a mozdulatnak az ellenfél ütése előtt |
 | 0x22 | u16: az első állapotrekord indexe a `.ste`-ben |
 
 ### `.ste`: 12 bájtos rekordok (little-endian)
@@ -113,6 +116,22 @@ Egy mozdulat rekordjai a `0x22`-es indextől a lezáró rekordig tartanak (`mask
 - **Lezáró rekord**: ha `fr ≤ képkocka` vagy véget ért az animáció → `target` (`cond == 0x0A`: 180°-os fordulás).
 - A blokkoló állapotok `op`-ja 0xFF (felső/középső blokk) vagy 0xFD (teljes); 0xFE = sérthetetlen.
 - A `val=0x00FF` átmenetek csak az AI-nak szólnak (emberi bemenettel elérhetetlenek).
+
+### Gépi ellenfél (`0x425892`, a portban `ai_think`)
+Az AI nem nyom gombot: az aktuális mozdulat átmenetei közül választ, és a célmozdulatot közvetlenül indítja (`0x43e828`).
+- Nem lép, ha valamelyik harcos dobás alatt van (testhelyzet 8). Ha háttal áll, az első 3-as fajtájú (megforduló) célt indítja.
+- Távolság (`0x4a5698`): < 0,8 közel (1–5. slot), < 1,0 közép (1–3. slot), egyébként távol (csak az 1. slot).
+- Pontozás (`0x425166`) minden átmenetre (`val` és `mask` ≠ 0xFF00, `cond`/`ctx`/`minfr` stimmel):
+  `pont = cél[0x19+slot] × SZORZÓ[táv][slot] × SZORZÓ[3 + ellenfél_alacsony][slot] × súly − ellenfél_mozdulata[0x19+slot]`.
+  `SZORZÓ` = `0x4a56a8` (5×6 int). A súly (`0x4250cc`) a helyzetbitek (`0x424f80`: guggol, levegőben, földön, kábult, blokkol, magasan/alacsonyan támad)
+  és a cél 0x1F-es maszkjának metszetéből jön: bitenként `0x4a5778[bit] + szint`. Minden slot csak `rand & 15 ≤ 0x4a5720[szint]` eséllyel számít.
+  A `mask == 0`, `ctx ≠ 0` átmenet kötelező (999999 pont).
+- Védekezés (`0x4256cd`): ha az ellenfél támad (fajta 1), az AI kiszámolja a következő találatának képkockáját.
+  `rand & 15 ≤ 0x4a5728[szint]` eséllyel és 2,1-nél kisebb távolságon egy 2-es fajtájú (blokk) célt választ 5000 ponttal,
+  ha lehet, a támadás magasságához illőt.
+- Csak akkor vált, ha a saját aktuális mozdulat pontja abban a slotban kisebb. Egy tickben legfeljebb 3 lépés.
+  Semleges mozdulatban (fajta 0) minden lépés előtt `8 − szint` ticket vár.
+- Nehézségi szint: 0–7 (`0x4a587c`, alapértéke 4).
 
 **Bemeneti bitek**: 0x01 előre, 0x02 hátra, 0x04 le, 0x08 fel, 0x10 ütés, 0x20 rúgás.
 **Kontextusbitek**: bit0 = az ellenfél ütőtávon belül, bit1 = háttal áll az ellenfélnek, bit2 = az ellenfél áll háttal.

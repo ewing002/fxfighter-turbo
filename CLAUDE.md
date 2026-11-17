@@ -4,7 +4,7 @@
 Az eredeti Windows-os FX Fighter Turbo újraírása modern rendszerre. Új C/SDL2 kód fut az eredeti `FIGHT.PAC` adatain. A dokumentáció és a felhasználóval folytatott kommunikáció magyar nyelvű.
 
 ## Hol tart most
-- **Kész:** asset-betöltés (modellek, textúrák, arénák, animációk), harcmotor (ütések, blokk, dobás, ugrás, ringből kiesés, körök, időzítő), hang (CD-zene MP3-ban, ASF-effektek, bankok, bemondó), 3D kamera az EXE-ből visszafejtett paraméterekkel, HUD az eredeti sprite-okkal, főmenü, betöltőkép, karakter- és arénaválasztó, VS-képernyő, 3 körös meccs, 1 játékos létra, kontrollertámogatás, OPTIONS menü, mentett beállítások.
+- **Kész:** asset-betöltés (modellek, textúrák, arénák, animációk), harcmotor (ütések, blokk, dobás, ugrás, ringből kiesés, körök, időzítő), hang (CD-zene MP3-ban, ASF-effektek, bankok, bemondó), 3D kamera az EXE-ből visszafejtett paraméterekkel, HUD az eredeti sprite-okkal, főmenü, betöltőkép, karakter- és arénaválasztó, VS-képernyő, 3 körös meccs, 1 játékos létra, gépi ellenfél (az eredeti AI, `0x425892`), kontrollertámogatás, OPTIONS menü nehézségi szinttel, mentett beállítások.
 - **Nincs élőben kipróbálva:** igazi Windowson és igazi kontrollerrel. A tesztek Linuxon, Xvfb-ben és headless szimulátorral futottak.
 
 ## Könyvtárszerkezet
@@ -47,7 +47,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
   ```
   Futtatáshoz a `bin-win64/SDL2.dll`-t a `build-win/` mellé kell másolni. A `FIGHT.PAC` eggyel feljebb van: `../FIGHT.PAC`. Windowson nincs szükség Xvfb-re, a `--screenshot` közvetlenül futtatható.
 - **Szimulátor:** `gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o fs`, majd `./fs <FIGHT.PAC> <p1> <p2> <ticks> <seed>`.
-  - Környezeti változók: `V=1` (mozdulatok), `SND=1` (hangok), `FLOOR=1` (talajtávolság), `FORCE_IN=<hex>` és `HOLD=<tick>` (adott bemenet tartása), `NOMESH=1` (modell nélkül).
+  - Környezeti változók: `V=1` (mozdulatok), `SND=1` (hangok), `FLOOR=1` (talajtávolság), `FORCE_IN=<hex>` és `HOLD=<tick>` (adott bemenet tartása), `NOMESH=1` (modell nélkül), `AI=<0..7>` (nehézség, alapértéke 4). A játékban és a szimulátorban `FX_AITRACE=1` kiírja az AI döntéseit.
 - **Képernyőkép:** `./build/fxfighter <FIGHT.PAC> --p1 4 --p2 6 --ticks 130 --screenshot out.ppm`. Menühöz `--screen title|menu|select|arena|vs|options`. Headless futtatáshoz `xvfb-run -a`.
 - **Gyorstesztelés:** `FX_AUTOTEST=1` (állapotnapló), `FX_AUTOWIN=1` (a 2. játékos ne legyen CPU), `FX_SPEED=8` (gyorsított idő).
 - Parancssori kapcsolók, amelyek kihagyják a menüt: `--p1`, `--p2`, `--arena`, `--2p`, `--demo`, `--fight`, `--viewer`.
@@ -61,9 +61,10 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 - Ugrás: `FUN_00440f42` képlete, +0,3 alappal.
 - Talajhoz igazítás: a modell legalacsonyabb pontja (`lowest_joint`).
 - Hangbankok: FXL fájlok. A `frontend` bank menüben, a `generic` harcban van.
+- AI: nem gombot nyom, hanem átmenetet választ a mozdulatfejléc 0x19–0x20-as bájtjai alapján. Részletek: `docs/FORMATS.md`.
 
 ## Nyitott feladatok (prioritás szerint)
-1. **Gépi ellenfél (AI):** az eredeti a `0x425892`-nél van. Az AI-átmenetek `val=0x00FF` jelűek, van nehézségi szint és véletlen elem. Jelenleg egyszerű helyettesítő van.
+1. **AI apróságok:** az eredeti AI kész. Hiányzik a gombnyomogatásos kiszabadulás (0xCC–0xCE), a kábulás-bit és a `0x424d8f` pontos eltolása. A 13-as harcos a szimulátorban összeomlik.
 2. **Jerzan (12. harcos):** a `fm12.dat` modellje szétesik. Valószínűleg ő a főellenség a 0-s arénában. Ezért kimaradt az 1 játékos sorozatból.
 3. **Kábulás (dizzy):** `cb3f8` körül, még nincs benne.
 4. **Kamera:** a pálya szélén használt külön nézet és a SAT/CAR/SIDE nézetek hiányoznak.

@@ -16,7 +16,8 @@ Windows 10/11-en, Linuxon és macOS-en is fordítható.
 - ✅ **Menük és HUD az eredeti grafikákkal**: betöltőképernyő, főmenü, karakterválasztó portrékkal, arénaválasztó (2 játékos), VS-képernyő bemondóval,
   ROUND / FIGHT! / KO / RING OUT! / TIME OVER / WINNER / YOU WIN / YOU LOSE / GAME OVER feliratok, eredeti életerőcsík, időzítő és névcímkék
 - ✅ **Meccsek**: 3 körből 2 nyert kör kell. 1 játékos módban sorban jön a többi 10 harcos, mindig az ellenfél saját arénájában. Vereség = GAME OVER.
-- ⏳ Az eredeti AI, opciók menü, FMV-k: lásd `docs/ROADMAP.md`
+- ✅ **Gépi ellenfél**: az eredeti AI visszafejtve, 8 nehézségi szinttel
+- ⏳ FMV-k, stáblista, rekordtábla: lásd `docs/ROADMAP.md`
 
 ## Futtatás Windows alatt
 Indítsd el a `port\bin-win64\fxfighter.exe`-t. A program magától megtalálja a két szinttel feljebb lévő `FIGHT.PAC`-ot.
@@ -31,7 +32,7 @@ Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT
 Menükben: d-pad vagy bal kar = mozgás, A = választás, B = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
 
 **Beállítások (OPTIONS a főmenüben):** teljes képernyő / ablak, VSync, zene és hangeffektek hangereje (0–10), körök száma (1, 3 vagy 5 körös meccs),
-kör hossza (30 / 60 / 90 / 99 másodperc vagy időkorlát nélkül), ringből kiesés be/ki, rezgés be/ki.
+kör hossza (30 / 60 / 90 / 99 másodperc vagy időkorlát nélkül), ringből kiesés be/ki, a gépi ellenfél nehézsége (1–8, alapértéke 5), rezgés be/ki.
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
 **Harc**

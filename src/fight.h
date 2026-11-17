@@ -26,6 +26,10 @@ typedef struct {
     uint8_t  sound;    /* +0x18                                                       */
     uint8_t  flags;    /* +0x19                                                       */
     uint8_t  cam;      /* +0x21 camera preset while the move plays (0x80: focus on this fighter) */
+    /* +0x19..+0x20 as read by the CPU opponent (0x425892), ai[k] = byte 0x19+k:
+     *  ai[0]   = flags (bits 0-1: 1 attack, 2 block, 3 turn; 0x0c: ring-edge check; 0x40: high; 0x80: never chosen)
+     *  ai[1..5] score per situation slot, ai[6] (0x1f) situation mask, ai[7] (0x20) frames needed before the opponent's hit */
+    uint8_t  ai[8];
     uint16_t state;    /* +0x22 first record in .ste                                 */
 } MoveDef;
 
@@ -78,7 +82,10 @@ typedef struct {
     int    turn_flag;      /* op 0xd8: turn around at next move start */
     int    health;
     unsigned in, prev_in;
-    int    cpu, ai_timer; unsigned ai_hold;
+    int    cpu;
+    int    ai_wait, ai_armed;  /* a5788 / f1604: idle delay (8 - level ticks) in neutral moves */
+    int    guard;          /* a8278: current guard op (>= 0xf1), 0 when not blocking */
+    int    ai_def, ai_def_hi;  /* a5780 / a5784: keep defending this long, side (bit 6) of the attack */
     int    last_fwd;
     int    hit_flash;
     int    wins;
@@ -111,6 +118,7 @@ typedef struct {
     int    start_delay;    /* ticks of round intro before the fighters may act (front end: ROUND n / FIGHT!) */
     int    round_secs;     /* round length in seconds, 0 = default 60, <0 = no time limit */
     int    hold;           /* 1 = do not start the next round automatically (the front end runs the match) */
+    int    ai_level;       /* CPU difficulty 0..7 (0x4a587c, default 4); the caller sets it */
     /* sound events for the front end: bank 0 generic, 1/2 player, 3 arena; 1-based index */
     int    nsnd;
     struct { uint8_t bank, index; } snd[32];

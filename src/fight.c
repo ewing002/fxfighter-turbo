@@ -39,6 +39,7 @@ int moveset_load(MoveSet *ms, const uint8_t *h, size_t hsz, const uint8_t *s, si
         memcpy(m->name, r, 20); m->name[20] = 0;
         m->limbs = r[20]; m->stance = r[21]; m->cls = r[22]; m->clip = r[23];
         m->sound = r[24]; m->flags = r[25]; m->cam = r[0x21]; m->state = rd16(r + 34);
+        memcpy(m->ai, r + 0x19, 8);
     }
     ms->nst = (int)(ssz / 12);
     ms->st = calloc((size_t)ms->nst + 1, sizeof(StateRec));   /* +1: zeroed terminator guard */
@@ -503,25 +504,195 @@ static void resolve_hit(Fight *f, int i)
 }
 
 /* ================================================================== */
-/*  Simple CPU opponent (placeholder for 0x425892)                     */
+/*  CPU opponent (0x425892) with its helpers: situation bits 0x424f80, */
+/*  situation weight 0x4250cc, move scoring 0x425166, defence 0x4256cd, */
+/*  ring-edge test 0x424d8f. The AI does not press keys: it picks one   */
+/*  of the current move's transitions and starts its target directly.   */
 /* ================================================================== */
-static void ai_input(Fight *f, int i)
+static const float   AI_RANGE[2]   = { 0.8f, 1.0f };                  /* 0x4a5698: close / mid / far */
+static const int     AI_MUL[5][6]  = {                                /* 0x4a56a8 */
+    { 0, 1, 2, 2, 3, 3 }, { 0, 1, 2, 2, 2, 2 }, { 0, 1, 1, 1, 1, 1 },  /* by range */
+    { 0, 1, 1, 2, 1, 2 }, { 0, 1, 2, 1, 2, 1 } };                      /* opponent high / low */
+static const uint8_t AI_ATTACK_P[8] = { 3, 4, 5, 6, 7, 8, 9, 10 };     /* 0x4a5720: rand & 15 <= p */
+static const uint8_t AI_DEFEND_P[8] = { 8, 9, 10, 11, 12, 13, 14, 15 };/* 0x4a5728 */
+static const uint8_t AI_SIT_W[7]    = { 3, 3, 5, 8, 3, 2, 2 };         /* 0x4a5778 */
+
+static int ai_level(const Fight *f) { return f->ai_level < 0 ? 0 : f->ai_level > 7 ? 7 : f->ai_level; }
+
+static int cond_ok(int c, int ost)
 {
-    Player *p = &f->p[i];
-    if (p->ai_timer > 0) { p->ai_timer--; p->in = p->ai_hold; return; }
-    float dist = fabsf(gap(f, i));
-    int r = rand() % 100;
-    if (f->winner >= 0) { p->ai_hold = 0; p->ai_timer = 20; }
-    else if (dist > 1.1f) { p->ai_hold = r < 85 ? IN_FWD : 0; p->ai_timer = 6 + rand() % 18; }
-    else if (r < 26) { p->ai_hold = IN_PUNCH; p->ai_timer = 4; }
-    else if (r < 48) { p->ai_hold = IN_KICK; p->ai_timer = 4; }
-    else if (r < 56) { p->ai_hold = IN_FWD | IN_KICK; p->ai_timer = 4; }
-    else if (r < 68) { p->ai_hold = IN_BACK | IN_PUNCH; p->ai_timer = 18 + rand() % 20; }
-    else if (r < 74) { p->ai_hold = IN_BACK; p->ai_timer = 10; }
-    else if (r < 80) { p->ai_hold = IN_DOWN | IN_KICK; p->ai_timer = 6; }
-    else if (r < 84) { p->ai_hold = IN_UP; p->ai_timer = 3; }
-    else { p->ai_hold = 0; p->ai_timer = 6 + rand() % 12; }
-    p->in = p->ai_hold;
+    return c == 0 || (!(c & 0x10) && c == ost) || ((c & 0x10) && (c & 0x0f) != ost);
+}
+
+/* target of a transition in the fighter's own table (0x4d6390 + player * 0x4800) */
+static const MoveDef *ai_target(const Player *p, int tgt)
+{
+    return tgt >= 0 && tgt < p->ms->nmoves ? &p->ms->moves[tgt] : NULL;
+}
+
+/* 0x424f80: what the opponent o is doing */
+static unsigned ai_situation(const Fight *f, int o)
+{
+    const MoveDef *m = cur_move(&f->p[o]);
+    unsigned s = 0;
+    if (m->cls == 2) s |= 0x01;                   /* crouching */
+    if (m->cls == 1) s |= 0x02;                   /* in the air / falling */
+    if (m->cls == 3) s |= 0x04;                   /* on the floor */
+    /* 0x08: dizzy (cb3f8) - not emulated yet */
+    if (f->p[o].guard) s |= 0x10;                 /* blocking (a8278) */
+    if ((m->ai[0] & 3) == 1) s |= (m->ai[0] & 0x40) ? 0x20 : 0x40;   /* attacking high / low */
+    /* 0x80: 0x424d8f(o, 0) is always 0 */
+    return s;
+}
+
+/* 0x4250cc */
+static int ai_weight(unsigned sit, unsigned mask, int lv)
+{
+    int w = 0;
+    for (int b = 0; b < 7; b++) if (sit & mask & (1u << b)) w += AI_SIT_W[b] + lv;
+    return w ? w : 1;
+}
+
+/* 0x424d8f: would the point 2 units behind the fighter be outside the ring.
+ * The decompiled code lost the offsets; behind (away from the opponent) is assumed. */
+static int ai_edge(const Fight *f, int i, int kind)
+{
+    if (!kind) return 0;
+    float x, y, ux, uy;
+    floor_pos(f, i, &x, &y);
+    fight_line_dir(f, &ux, &uy);
+    float back = gap(f, i) >= 0 ? -2.f : 2.f;
+    x += ux * back; y += uy * back;
+    return fabsf(x) > f->ring_half || fabsf(y) > f->ring_half;
+}
+
+/* the opponent's attack: frame of its next hit event + 1 (100: continuous hit already
+ * running, 0: none); *hi receives the attack's height bit (a5784) */
+static int ai_threat(const Fight *f, int i, int *hi)
+{
+    const Player *o = &f->p[i ^ 1];
+    const MoveDef *m = cur_move(o);
+    if ((m->ai[0] & 3) != 1) return 0;
+    int k = m->state, passed = 0;
+    const StateRec *r = rec(o, k);
+    int cont = r->op == 0xd4;
+    for (; r->fr < o->frame && !is_term(r); r = rec(o, ++k)) {
+        if (r->op && r->op < 0x78) passed = 1;
+        if (r->op == 0) passed = 0;
+    }
+    for (; !passed && (r->op == 0 || r->op > 0x78) && !is_term(r); r = rec(o, ++k)) {}
+    if (cont && passed) return 100;
+    if (r->op == 0) return 0;
+    *hi = (m->ai[0] >> 6) & 1;
+    return r->fr + 1;
+}
+
+/* 0x4256cd: a blocking transition (target kind 2), preferably on the attack's side */
+static int ai_defend(const Fight *f, int i, int threat, int nslots, int ohi, int *slot, int *score)
+{
+    const Player *p = &f->p[i], *o = &f->p[i ^ 1];
+    int found = -1;
+    *slot = 0; *score = 0;
+    if (!(threat != o->frame && threat - o->frame >= 0)) return -1;
+    if ((rand() & 15) > AI_DEFEND_P[ai_level(f)]) return -1;
+    if (fabsf(gap(f, i)) >= 2.1f) return -1;
+    for (int k = p->sp; k - p->sp < 256; k++) {
+        const StateRec *r = rec(p, k);
+        if (is_term(r)) break;
+        const MoveDef *t = ai_target(p, r->tgt);
+        if (!t || (t->ai[0] & 3) != 2) continue;
+        *slot = nslots - 1 - ohi; *score = 5000; found = k;
+        if (p->ai_def_hi == ((t->ai[0] >> 6) & 1)) break;
+    }
+    return found;
+}
+
+/* 0x425166: best scoring transition of the current move; returns its record index
+ * (the terminator when nothing scores) */
+static int ai_choose(const Fight *f, int i, int range, int nslots, int threat, unsigned sit,
+                     int *slot, int *score)
+{
+    const Player *p = &f->p[i], *o = &f->p[i ^ 1];
+    const MoveDef *om = cur_move(o);
+    int lv = ai_level(f), ost = om->stance & 0x1f, low = !((om->ai[0] >> 6) & 1);
+    unsigned ctx = ctx_bits(f, i);
+    int best = -1, k = p->sp;
+    *slot = 0; *score = 0;
+    for (; k - p->sp < 256; k++) {
+        const StateRec *r = rec(p, k);
+        int cok = cond_ok(r->cond, ost), xok = (unsigned)(r->ctx >> 4) == (r->ctx & ctx);
+        if (r->mask == 0 && r->ctx && xok && cok) {     /* context transition without input: always */
+            *score = 999999; *slot = nslots;
+            return k;
+        }
+        const MoveDef *t = ai_target(p, r->tgt);
+        if (t && r->val != 0xff00 && r->mask != 0xff00 && cok && xok && r->minfr <= p->frame) {
+            int w = ai_weight(sit, t->ai[6], lv);
+            for (int s = 1; s < nslots; s++) {
+                int v = t->ai[s] * AI_MUL[range][s] * AI_MUL[3 + low][s];
+                if (w > 1) v *= w;
+                v -= om->ai[s];
+                if (v < *score || (rand() & 15) > AI_ATTACK_P[lv]) continue;
+                if (ai_edge(f, i, (t->ai[0] >> 2) & 3) || (t->ai[0] & 0x80)) continue;
+                if (t->ai[7] && threat && t->ai[7] > threat - o->frame) continue;
+                *score = v; *slot = s; best = k;
+            }
+        }
+        if (is_term(r)) break;
+    }
+    if (best < 0) { *score = 0; *slot = 0; best = k; }
+    return best;
+}
+
+/* 0x425892: returns 1 when a move was started */
+static int ai_think(Fight *f, int i)
+{
+    Player *p = &f->p[i], *o = &f->p[i ^ 1];
+    if (p->ringout || f->winner >= 0 || f->round_age < f->start_delay || CUR(p) != p->ms) return 0;
+    for (int k = 0; k < 2; k++) if ((cur_move(&f->p[k])->stance & 0x3f) == 8) return 0;   /* throw */
+    int lv = ai_level(f);
+    float d = fabsf(gap(f, i));
+    int range = 0;
+    while (range < 2 && AI_RANGE[range] <= d) range++;
+    int nslots = 6 - 2 * range;
+    if (facing_away(f, i)) {                      /* turn around first (target kind 3) */
+        for (int k = p->sp; k - p->sp < 256; k++) {
+            const StateRec *r = rec(p, k);
+            if (is_term(r)) break;
+            const MoveDef *t = ai_target(p, r->tgt);
+            if (t && (t->ai[0] & 3) == 3) { start_move(f, i, r->tgt); return 1; }
+        }
+    }
+    int threat = ai_threat(f, i, &p->ai_def_hi);
+    unsigned sit = ai_situation(f, i ^ 1);
+    int ohi = (cur_move(o)->ai[0] >> 6) & 1;
+    /* ops 0xcc..0xce (break free by button mashing) are not emulated by the engine yet */
+    if ((cur_move(p)->ai[0] & 3) == 0) {          /* neutral move: wait 8 - level ticks */
+        if (!p->ai_armed && !p->ai_wait) { p->ai_wait = 8 - lv; p->ai_armed = 1; }
+        if (p->ai_wait) { p->ai_wait--; return 0; }
+    }
+    int started = 0, prev = 0;
+    for (int it = 0; it < 3; it++) {
+        int dslot = 0, dscore = 0, didx = -1;
+        if (threat || prev || p->ai_def) didx = ai_defend(f, i, threat, nslots, ohi, &dslot, &dscore);
+        if (p->ai_def > 0) p->ai_def--;
+        int slot, score, idx = ai_choose(f, i, range, nslots, threat, sit, &slot, &score);
+        prev = idx - p->sp;
+        int bslot = slot, bscore = score > 0 ? score : 0, bidx = idx;
+        if (threat > 0 && bscore < 1000 && (rand() & 15) <= AI_DEFEND_P[lv]) {
+            bscore = dscore; bslot = dslot; bidx = didx;
+            p->ai_def = threat + 1;
+        }
+        if (bscore == 0 || bidx < 0) break;
+        if ((int)cur_move(p)->ai[bslot] < bscore) {
+            start_move(f, i, rec(p, bidx)->tgt);
+            p->ai_armed = 0;
+            started = 1;
+            if (getenv("FX_AITRACE"))
+                fprintf(stderr, "AI P%d range %d slot %d score %d -> %s\n", i + 1, range, bslot, bscore, player_move_name(p));
+        }
+    }
+    return started;
 }
 
 /* ================================================================== */
@@ -739,7 +910,6 @@ void fight_reset(Fight *f)
 
 void fight_tick(Fight *f)
 {
-    for (int i = 0; i < 2; i++) if (f->p[i].cpu) ai_input(f, i);
     if (f->winner >= 0 || f->round_age < f->start_delay) { f->p[0].in = f->p[1].in = 0; }
 
     for (int i = 0; i < 2; i++) ring_out_check(f, i);
@@ -747,8 +917,14 @@ void fight_tick(Fight *f)
         Player *p = &f->p[i];
         process_events(f, i);
         if (p->cont_hit > 0 && hit_test(f, i, damage_of(p, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
-        if (input_transitions(f, i)) process_events(f, i);
-        if (check_end(f, i)) { process_events(f, i); if (input_transitions(f, i)) process_events(f, i); }
+        unsigned op = rec(p, p->sp)->op;          /* a8278: guard state seen by the CPU opponent */
+        if (op >= 0xf1) p->guard = (int)op; else if (op < 200) p->guard = 0;
+        if (p->cpu ? ai_think(f, i) : input_transitions(f, i)) process_events(f, i);
+        if (check_end(f, i)) {
+            process_events(f, i);
+            /* 0x44176b calls the AI again only when the new move's first record fires at frame 0 */
+            if (p->cpu ? rec(p, p->sp)->fr == 0 && ai_think(f, i) : input_transitions(f, i)) process_events(f, i);
+        }
         p->prev_in = p->in;
     }
     resolve_hit(f, 0);
