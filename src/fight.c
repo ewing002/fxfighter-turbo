@@ -1073,7 +1073,8 @@ void fight_tick(Fight *f)
         if (f->over_timer == 5 * FIGHT_HZ) {
             /* winner announcement: vs CPU "you win" / "you lose", otherwise "player 1/2 wins" */
             int h0 = !f->p[0].cpu, h1 = !f->p[1].cpu;
-            if (h0 != h1) emit_sound(f, 0, (h0 ? f->winner == 0 : f->winner == 1) ? 2 : 3);
+            if (f->name_snd[f->winner] > 0) emit_sound(f, 0, f->name_snd[f->winner]);   /* tournament */
+            else if (h0 != h1) emit_sound(f, 0, (h0 ? f->winner == 0 : f->winner == 1) ? 2 : 3);
             else emit_sound(f, 0, f->winner == 0 ? 14 : 15);
             if (f->p[f->winner].health == MAX_HEALTH) emit_sound(f, 0, 7);
         }

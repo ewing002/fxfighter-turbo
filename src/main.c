@@ -671,8 +671,10 @@ static void restart_fight(void)
     fight_reset(&g_fight);
     g_yaw_ofs = 0;
     music_play(g_arena.id + 2);                 /* FIGHT.EXE: CD track = arena + 2 */
-    sfx_bank_load(0, "generic");
+    sfx_bank_load(0, g_tour ? "tour" : "generic");   /* 0x413a6d: tour.fxl = generic + the fighter names */
     g_bank0_front = 0;
+    for (int i = 0; i < 2; i++)                  /* tour.fxl 20..30: the names, fighter id + 0x13 */
+        g_fight.name_snd[i] = g_tour && g_f[i].id >= 1 && g_f[i].id <= 11 ? g_f[i].id + 0x13 : 0;
     sfx_bank_load(1, g_f[0].fi.name[0] ? g_f[0].fi.name : "magnon");
     sfx_bank_load(2, g_f[1].fi.name[0] ? g_f[1].fi.name : "magnon");
     { char bn[8]; snprintf(bn, sizeof bn, "b%d", g_arena.id); sfx_bank_load(3, bn); }

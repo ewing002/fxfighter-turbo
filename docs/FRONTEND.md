@@ -114,7 +114,10 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      a szokásosak. Gép–gép meccset bármely gomb véletlen győztessel átugor. Harc közben a névpanel `pan_pl<n>` vagy
      `pan_cpu`. A 2. meccstől a front end VS-képernyője jön (belépési mód 1, G59/G60 a két harcos 16.16-ban, G63 a két
      címke: induló 0–7, 8 = cpu), a végén a helyezések (belépési mód 6, G59/G60 a helyezettek harcosai, G64/G65 az
-     indulók, nyers bájtokként, felül a jobb hely); a táblázatról ütés a főmenübe visz. Nincs ágrajz-képernyő;
+     indulók, nyers bájtokként, felül a jobb hely); a táblázatról ütés a főmenübe visz. Nincs ágrajz-képernyő.
+     A tornán a 0-s hangbank a `tour.fxl` (`0x413a6d`: a `generic` lista + 20–30 a harcosnevek + 31 „wins”), és
+     minden menet végén a bemondó a győztes nevét mondja (`0x42263c`: harcos + 0x13), teljes életnél utána a
+     „perfect”-et (7); a „you win” / „player n wins” helyett;
    - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
    - gombkiosztás: a harci bemenet (`0x428036`) játékosonként 6 gombot olvas a `0x4a588a + 6p` címről: ATTACK
      (előre a kezdőoldalról), RETREAT, JUMP, DUCK, PUNCH, KICK (DirectInput-kódok; bitek 0x01/0x02, 0x08, 0x04, 0x10,
@@ -126,8 +129,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: hendikep, a torna bemondója (az eredetiben minden menet
-   győztesét név szerint mondja), rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: hendikep, rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 

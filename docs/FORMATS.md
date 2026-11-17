@@ -213,7 +213,8 @@ Szöveges lista, soronként egy mintanév, `end`-ig; `;` = megjegyzés; `null` =
 (a bejegyzés `+0x10` mezője): nincs = 0, `*` = 1 és `#` = 3 beszéd – lemezről, egyetlen csatornán szól, és ha az
 foglalt, egy 10 elemű sorba áll (`FUN_0041142a`), így a bemondások egymás után hangzanak el (pl. a választás után
 „név – versus – név”); `+` = 2 rövid hang egy kis puffergyűrűn át (a portban úgy szól, mint a 0).
-- 0-s bank: `generic` (bemondó: 1 "FIGHT", 2 győzelem, 3 vereség, 4 idő, 7 hibátlan, 14/15 P1/P2 nyert, 16 hirtelen halál, 17 visszaszámlálás, 19 teleport)
+- 0-s bank: `generic` (bemondó: 1 "FIGHT", 2 győzelem, 3 vereség, 4 idő, 7 hibátlan, 14/15 P1/P2 nyert, 16 hirtelen halál, 17 visszaszámlálás, 19 teleport);
+  tornán `tour` (ugyanez, plusz 20–30 a harcosok neve 1–11 sorrendben, 31 „wins”)
 - 1/2-es bank: a harcos neve (`magnon.fxl`, …, 45 bejegyzés)
 - arénabank: `b%d.fxl` (4 bejegyzés: lépés, puffanás, landolás, dobbanás)
 
