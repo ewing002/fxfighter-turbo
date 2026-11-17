@@ -14,9 +14,9 @@ Az eredeti Windows-os FX Fighter Turbo újraírása modern rendszerre. Új C/SDL
 - `src/ui.[ch]` – 2D sprite-ok, 640×480 virtuális képernyő
 - `src/main.c` – renderelés, kamera, menük, meccslogika, bemenet, opciók
 - `src/tables.h` – EXE-ből kinyert táblák (ütésvonalak, reakciók)
-- `tools/` – Python segédek (unpac, cmp, brmodel, ani, moves, asf, pixlib, rip_cd)
+- `tools/` – Python segédek (unpac, cmp, brmodel, brmat, ani, moves, asf, pixlib, rip_cd, pe, stratdis, menutab)
 - `tests/fightsim.c` – headless CPU-vs-CPU szimuláció
-- `docs/FORMATS.md`, `docs/ROADMAP.md`, `README.md` – formátumleírás, mérföldkövek, használat
+- `docs/FORMATS.md`, `docs/ROADMAP.md`, `docs/FRONTEND.md`, `README.md` – formátumleírás, mérföldkövek, a 3D front end terve, használat
 - `bin-win64/` – Windows-os exe és SDL2.dll
 
 ## Referenciaanyagok (nem része a repónak)
@@ -68,7 +68,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
 3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Az effektje (`f1a48`) hiányzik.
 4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
-5. **Menük:** az eredeti front end egy BRender 3D jelenet (`frontend/crshipl1.dat`: 210 modell, pl. forgó opciókockák, nyolcszögek; `demo.mat` anyagok az `align.pix` textúráival; a `0x412a7a` építi fel, egy objektum/trigger szkript mozgatja). A port 2D-s menüi ennek átértelmezései, a pozíciók szemre vannak. A portrék párosítása a `demo.mat` alapján már pontos.
+5. **Menük (3D front end):** az eredeti menük egy szkript-VM-mel mozgatott BRender 3D jelenet. Felderítés, terv és állapot: `docs/FRONTEND.md` (eszközök: `tools/stratdis.py`, `tools/menutab.py`). Folyamatban: 2. lépés (eszközök C-oldalon). A port jelenlegi 2D-s menüi addig maradnak.
 6. **Folytatás, stáblista, rekordtábla, FMV:** nincs kész.
 7. **Színezés:** a `colmap.tab` árnyalótáblát nem emulálja.
 8. **Háttér:** a függőleges eltolás (`0x4f1b5a`) becsült.
