@@ -1015,13 +1015,36 @@ static void begin_match(int p1, int p2, int arena, int cpu1, int cpu2)
     set_state(ST_FIGHT);
 }
 
+/* 1 player ladder (0x496150, built by the function around 0x41a6xx): 4 orders per fighter,
+ * 7 regulars then the bosses 10, 11, 9 (fighter 9 meets 10, 11 last). The rows of fighter 12
+ * (JERZAN) are empty: the original never sends him; fm12.dat only has head, hands and feet. */
+static const uint8_t LADDER[11][4][10] = {
+    { {6,3,5,8,2,4,7,10,11,9}, {6,2,4,7,3,5,8,10,11,9}, {7,4,6,3,5,2,8,10,11,9}, {7,5,2,8,4,6,3,10,11,9} },
+    { {7,8,3,1,5,4,6,10,11,9}, {7,5,4,6,8,3,1,10,11,9}, {5,6,3,7,1,4,8,10,11,9}, {5,1,4,8,6,3,7,10,11,9} },
+    { {2,7,1,4,8,5,6,10,11,9}, {2,8,5,6,7,1,4,10,11,9}, {8,6,4,2,1,5,7,10,11,9}, {8,1,5,7,6,4,2,10,11,9} },
+    { {3,5,1,6,2,7,8,10,11,9}, {3,2,7,8,5,1,6,10,11,9}, {8,2,5,3,1,6,7,10,11,9}, {8,1,6,7,2,5,3,10,11,9} },
+    { {2,4,8,1,3,7,6,10,11,9}, {2,3,7,6,4,8,1,10,11,9}, {1,4,3,2,7,8,6,10,11,9}, {1,7,8,6,4,3,2,10,11,9} },
+    { {4,7,2,5,8,1,3,10,11,9}, {4,8,1,3,7,2,5,10,11,9}, {5,4,7,2,1,8,3,10,11,9}, {5,1,8,3,4,7,2,10,11,9} },
+    { {6,2,8,1,5,4,3,10,11,9}, {6,5,4,3,2,8,1,10,11,9}, {4,3,1,8,2,6,5,10,11,9}, {4,2,6,5,3,1,8,10,11,9} },
+    { {3,7,5,1,2,4,6,10,11,9}, {3,2,4,6,7,5,1,10,11,9}, {1,5,3,4,7,2,6,10,11,9}, {1,7,2,6,5,3,4,10,11,9} },
+    { {8,5,4,7,6,2,1,3,10,11}, {8,6,2,1,3,5,4,7,10,11}, {6,1,5,7,8,2,4,3,10,11}, {6,8,2,4,3,1,5,7,10,11} },
+    { {7,2,8,6,4,3,1,5,11,9}, {7,4,3,1,5,2,8,6,11,9}, {2,7,5,1,6,4,3,8,11,9}, {2,6,4,3,8,7,5,1,11,9} },
+    { {3,7,2,6,4,8,1,5,10,9}, {3,4,8,1,5,7,2,6,10,9}, {1,5,3,4,7,2,8,6,10,9}, {1,7,2,8,6,5,3,4,10,9} },
+};
+
 static void build_ladder(int player)
 {
     g_nladder = 0;
-    for (int id = 1; id <= 11; id++) if (id != player && fighter_exists(id)) g_ladder[g_nladder++] = id;
-    for (int i = g_nladder - 1; i > 0; i--) { int j = rand() % (i + 1), t = g_ladder[i]; g_ladder[i] = g_ladder[j]; g_ladder[j] = t; }
-    /* fighter 12 (JERZAN, pan_cr12) would be the boss in the small arena 0, but his model
-     * (fm12.dat) does not assemble correctly yet, so the ladder ends after the 10 regulars */
+    if (player >= 1 && player <= 11) {
+        int v = rand() & 3;                         /* the original picks one of the 4 orders at random */
+        for (int k = 0; k < 10; k++) {
+            int id = LADDER[player - 1][v][k];
+            if (id != player && fighter_exists(id)) g_ladder[g_nladder++] = id;
+        }
+    } else {
+        for (int id = 1; id <= 11; id++) if (id != player && fighter_exists(id)) g_ladder[g_nladder++] = id;
+        for (int i = g_nladder - 1; i > 0; i--) { int j = rand() % (i + 1), t = g_ladder[i]; g_ladder[i] = g_ladder[j]; g_ladder[j] = t; }
+    }
     g_ladder_pos = 0;
 }
 

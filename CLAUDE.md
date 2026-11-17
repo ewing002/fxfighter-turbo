@@ -4,7 +4,7 @@
 Az eredeti Windows-os FX Fighter Turbo újraírása modern rendszerre. Új C/SDL2 kód fut az eredeti `FIGHT.PAC` adatain. A dokumentáció és a felhasználóval folytatott kommunikáció magyar nyelvű.
 
 ## Hol tart most
-- **Kész:** asset-betöltés (modellek, textúrák, arénák, animációk), harcmotor (ütések, blokk, dobás, ugrás, ringből kiesés, körök, időzítő), hang (CD-zene MP3-ban, ASF-effektek, bankok, bemondó), 3D kamera az EXE-ből visszafejtett paraméterekkel, HUD az eredeti sprite-okkal, főmenü, betöltőkép, karakter- és arénaválasztó, VS-képernyő, 3 körös meccs, 1 játékos létra, gépi ellenfél (az eredeti AI, `0x425892`), kontrollertámogatás, OPTIONS menü nehézségi szinttel, mentett beállítások.
+- **Kész:** asset-betöltés (modellek, textúrák, arénák, animációk), harcmotor (ütések, blokk, dobás, ugrás, ringből kiesés, körök, időzítő), hang (CD-zene MP3-ban, ASF-effektek, bankok, bemondó), 3D kamera az EXE-ből visszafejtett paraméterekkel, HUD az eredeti sprite-okkal, főmenü, betöltőkép, karakter- és arénaválasztó, VS-képernyő, 3 körös meccs, 1 játékos létra (az eredeti sorrendtábla), gépi ellenfél (az eredeti AI, `0x425892`), kontrollertámogatás, OPTIONS menü nehézségi szinttel, mentett beállítások.
 - **Nincs élőben kipróbálva:** igazi Windowson és igazi kontrollerrel. A tesztek Linuxon, Xvfb-ben és headless szimulátorral futottak.
 
 ## Könyvtárszerkezet
@@ -65,7 +65,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 
 ## Nyitott feladatok (prioritás szerint)
 1. **AI apróságok:** az eredeti AI kész. Hiányzik a gombnyomogatásos kiszabadulás (0xCC–0xCE), a kábulás-bit és a `0x424d8f` pontos eltolása. A 13-as harcos a szimulátorban összeomlik.
-2. **Jerzan (12. harcos):** a `fm12.dat` modellje szétesik. Valószínűleg ő a főellenség a 0-s arénában. Ezért kimaradt az 1 játékos sorozatból.
+2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
 3. **Kábulás (dizzy):** `cb3f8` körül, még nincs benne.
 4. **Kamera:** a pálya szélén használt külön nézet és a SAT/CAR/SIDE nézetek hiányoznak.
 5. **Menük:** a `winfront.c` pontos elrendezése nincs visszafejtve, a pozíciók szemre vannak.
