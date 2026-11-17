@@ -146,7 +146,11 @@ Söprés: a doboz a mozdulat előző vizsgálatának (össze nem vont) dobozáva
 vizsgálattól íródik, és a StartMove nullázza, ezért a mozdulat második vizsgálata egy nulla dobozzal vonódik össze (szintén az eredeti szerint).
 A vizsgálat előtt a képkocka az esemény `fr`-jére áll, utána a mozdulat eseményei egy 0-s vagy ≥ 0xF1-es rekordig nem futnak (`cb540`).
 A 0xD4-es opkód után a következő támadó esemény "folyamatos": a vizsgálat minden tickben megismétlődik, amíg talál vagy véget ér a mozdulat.
-Sebzés = `op × fi[0x40] × fi[0x44] × nehézségi szorzó` (gyakorlatilag az `op`). Visszalökés: 0,1 / 0,2 / 0,3 az irány (`cond>>6`) szerint.
+Sebzés = `op × fi[0x40] × fi[0x44] × támadás[támadó] × védekezés[áldozat]`, csonkolva (`0x441865`; a két `fi` tag 1,0).
+A két szorzót minden menet előtt a `0x446690` állítja: gépi harcosnál a nehézségi szintből (támadás `0x4a5738`:
+1,0 1,11 1,12 1,12 1,15 1,15 1,2 1,2; védekezés `0x4a5758`: 1,0 1,0 0,95 0,9 0,9 0,9 0,85 0,8), két ember között a
+támadás a hendikep (`0x4a4030`: 0,7 … 1,4, 0,1-es lépésekkel; a 4. fokozat 1,0), a védekezés 1,0; ember a gép ellen
+1,0 / 1,0. Visszalökés: 0,1 / 0,2 / 0,3 az irány (`cond>>6`) szerint.
 **Kombó** (`0x448cbb`): ha az áldozat a találat előtt reakciómozdulatban volt (`0x4a4ac0` jelzőtábla, a StartMove a `cb4c8`-ba írja),
 a sebzés és a kábulás az n-edik kombótalálatnál `0x4aa470[n]`-szeres (0,2 / 0,15 / 0,1 / 0,05 / 0,02, utána 0,01). Tiszta találatnál n = 0-ra áll.
 **Kábulás** (`cb3f8`): tiszta találat `fi[0x58] × sebzés` pontot ad (3,0). Tickenként `5 × fi[0x5c]` pont fogy (2,0),

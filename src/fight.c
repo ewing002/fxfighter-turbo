@@ -372,10 +372,29 @@ static int hit_test(Fight *f, int i, int damage, int dir)
     return 0;
 }
 
-static int damage_of(const Player *p, int op)
+/* damage factors (0x446690, set before every round): the attacker's "attack" times the victim's
+ * "defence" (0x4c73c0 / 0x4c72d0). A CPU fighter gets both from the difficulty (0x4a5738 /
+ * 0x4a5758), two humans the handicap as attack (0x4a4030); a human against the CPU 1.0 / 1.0 */
+static const float CPU_ATK[8] = { 1.0f, 1.11f, 1.12f, 1.12f, 1.15f, 1.15f, 1.2f, 1.2f };
+static const float CPU_DEF[8] = { 1.0f, 1.0f, 0.95f, 0.9f, 0.9f, 0.9f, 0.85f, 0.8f };
+static const float HC_ATK[8]  = { 0.7f, 0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f };
+
+static int ai_level(const Fight *f);
+
+static float atk_mul(const Fight *f, int i)
 {
-    /* op * fi[0x40] * fi[0x44] (all 1.0) * difficulty factors (CPU: 1.15 * 0.9 at level 4) */
-    return p->cpu ? (int)((float)op * 1.035f) : op;
+    if (f->p[i].cpu) return CPU_ATK[ai_level(f)];
+    if (f->p[i ^ 1].cpu) return 1.0f;
+    int h = f->handicap[i];
+    return HC_ATK[h < 0 ? 0 : h > 7 ? 7 : h];
+}
+
+static float def_mul(const Fight *f, int i) { return f->p[i].cpu ? CPU_DEF[ai_level(f)] : 1.0f; }
+
+/* op * fi[0x40] * fi[0x44] (all 1.0) * attack(attacker) * defence(victim), truncated (0x441865) */
+static int damage_of(const Fight *f, int i, int op)
+{
+    return (int)((float)op * atk_mul(f, i) * def_mul(f, i ^ 1));
 }
 
 /* ================================================================== */
@@ -408,7 +427,7 @@ static void process_events(Fight *f, int i)
             else if (op < 100) {
                 if (p->cont_hit == 0) {
                     p->frame = r->fr;                 /* the check uses the pose of the event's frame */
-                    hit_test(f, i, damage_of(p, (int)op), r->cond >> 6);
+                    hit_test(f, i, damage_of(f, i, (int)op), r->cond >> 6);
                     p->ev_lock = 1;
                 }
                 else p->cont_hit = (int)op;           /* armed by 0xd4: keep testing every tick */
@@ -1012,7 +1031,7 @@ void fight_tick(Fight *f)
         Player *p = &f->p[i];
         if (p->in != p->prev_in) p->mash++;       /* 0x44176b: every input change counts for breaking free */
         process_events(f, i);
-        if (p->cont_hit > 0 && hit_test(f, i, damage_of(p, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
+        if (p->cont_hit > 0 && hit_test(f, i, damage_of(f, i, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
         unsigned op = rec(p, p->sp)->op;          /* a8278: guard state seen by the CPU opponent */
         if (op >= 0xf1) p->guard = (int)op; else if (op < 200) p->guard = 0;
         if (p->cpu ? ai_think(f, i) : input_transitions(f, i)) process_events(f, i);

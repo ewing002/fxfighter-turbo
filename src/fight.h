@@ -132,6 +132,7 @@ typedef struct {
     int    round_secs;     /* round length in seconds, 0 = default 60, <0 = no time limit */
     int    hold;           /* 1 = do not start the next round automatically (the front end runs the match) */
     int    ai_level;       /* CPU difficulty 0..7 (0x4a587c, default 4); the caller sets it */
+    int    handicap[2];    /* two humans: damage factor index 0..7 = x0.7 .. x1.4 (0x4a5878, 3 = x1.0) */
     int    name_snd[2];    /* >0: the round winner is called by name, bank 0 index (tour.fxl, 0x42263c) */
     int    cam_shake;      /* set by self damage ops 100..149 (4a4bd4); the front end clears it */
     /* sound events for the front end: bank 0 generic, 1/2 player, 3 arena; 1-based index */

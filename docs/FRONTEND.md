@@ -118,6 +118,9 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      A tornán a 0-s hangbank a `tour.fxl` (`0x413a6d`: a `generic` lista + 20–30 a harcosnevek + 31 „wins”), és
      minden menet végén a bemondó a győztes nevét mondja (`0x42263c`: harcos + 0x13), teljes életnél utána a
      „perfect”-et (7); a „you win” / „player n wins” helyett;
+   - hendikep (2P): a START_GAME 5–6. paramétere (1–8) a konfigurációs blokk 0–1. bájtjába kerül (`0x40bce7`), és
+     két ember között a támadó sebzését szorozza 0,7…1,4-gyel (a 4 semleges; lásd `docs/FORMATS.md`, sebzés). A port
+     az `options.cfg`-ben tartja (`handicap1`, `handicap2`, alapból 4; az eredeti gyári értéke 3);
    - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
    - gombkiosztás: a harci bemenet (`0x428036`) játékosonként 6 gombot olvas a `0x4a588a + 6p` címről: ATTACK
      (előre a kezdőoldalról), RETREAT, JUMP, DUCK, PUNCH, KICK (DirectInput-kódok; bitek 0x01/0x02, 0x08, 0x04, 0x10,
@@ -129,7 +132,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: hendikep, rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 

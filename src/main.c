@@ -90,8 +90,9 @@ static int  g_bank0_front;                      /* sound bank 0 holds frontend.f
 static char g_fname[16][16], g_aname[16][16];   /* fighter / arena names from fi%d.cmp */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4 };   /* difficulty: CPU level 0..7 (0x4a587c) */
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2]; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 } };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+                                                                 * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 static SDL_Window *g_win;
 static int  g_opt_sel, g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
@@ -853,6 +854,8 @@ static void cfg_load(void)
         else if (!strcmp(k, "ringouts")) g_cfg.ringouts = v != 0;
         else if (!strcmp(k, "rumble")) g_cfg.rumble = v != 0;
         else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
+        else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
+            g_cfg.hc[k[8] - '1'] = v < 1 ? 0 : v > 8 ? 7 : v - 1;
         else if (!strncmp(k, "key", 3)) {                 /* key1..key12: DirectInput scan codes */
             int i = atoi(k + 3) - 1;
             if (i >= 0 && i < 12 && v > 0 && v < 256 && sdl_scan(v)) g_keys[i] = (uint8_t)v;
@@ -869,6 +872,7 @@ static void cfg_save(void)
     fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\ndifficulty=%d\n",
             g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
             g_cfg.difficulty);
+    fprintf(f, "handicap1=%d\nhandicap2=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -884,6 +888,7 @@ static void cfg_apply(void)
     sfx_set_volume((float)g_cfg.sfx / 10.0f);
     g_ringouts = g_cfg.ringouts;
     g_fight.ai_level = g_cfg.difficulty;
+    g_fight.handicap[0] = g_cfg.hc[0]; g_fight.handicap[1] = g_cfg.hc[1];
     keys_apply();
 }
 
@@ -1658,6 +1663,7 @@ static void port_to_fecfg(void)
 {
     uint8_t *c = g_vm.cfg;
     c[FECFG_DIFF] = (uint8_t)g_cfg.difficulty;
+    c[FECFG_HC] = (uint8_t)g_cfg.hc[0]; c[FECFG_HC + 1] = (uint8_t)g_cfg.hc[1];
     int rt = g_cfg.round_secs > 90 ? 90 : g_cfg.round_secs;          /* 99 s: not in the original */
     c[FECFG_RTIME] = (uint8_t)(rt & 0xff); c[FECFG_RTIME + 1] = (uint8_t)((rt >> 8) & 0xff);
     c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
@@ -1670,6 +1676,7 @@ static void fecfg_to_port(void)
 {
     const uint8_t *c = g_vm.cfg;
     g_cfg.difficulty = c[FECFG_DIFF] > 7 ? 7 : c[FECFG_DIFF];
+    for (int i = 0; i < 2; i++) g_cfg.hc[i] = c[FECFG_HC + i] > 7 ? 3 : c[FECFG_HC + i];
     int rt = (int16_t)(c[FECFG_RTIME] | c[FECFG_RTIME + 1] << 8);
     g_cfg.round_secs = rt < 0 ? -1 : (rt == 30 || rt == 90) ? rt : 60;
     int r = c[FECFG_ROUNDS];
@@ -1794,6 +1801,9 @@ static void fe_start_match(int m)
 {
     int p1 = g_vm.p1, p2 = g_vm.p2, ar = g_vm.arena;
     fe_vm_g_to_cfg(&g_vm);                       /* the options as set in the menu, saved or not */
+    if (m == 2) {                                /* 2 players: the handicaps of START_GAME (0x40bce7) */
+        g_vm.cfg[FECFG_HC] = (uint8_t)(g_vm.hc1 - 1); g_vm.cfg[FECFG_HC + 1] = (uint8_t)(g_vm.hc2 - 1);
+    }
     fecfg_to_port();
     cfg_apply();
     if (m == 3) {                               /* endurance: 4 slots per side, top byte first */
