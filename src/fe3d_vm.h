@@ -106,6 +106,7 @@ struct FeVm {
      * ticks (fe_vm_scene_lerp); has_prev = 0 for actors spawned in the last tick */
     int32_t  prev[FEVM_MAX_ACTORS][9];
     uint8_t  has_prev[FEVM_MAX_ACTORS];
+    int      raw_wait;           /* op E4 is waiting for a key (see there) */
     int      debug;              /* 1: print debug strings and errors to stderr */
     int      errors;             /* count of script errors (bad ops, stack, pool full ...) */
 };

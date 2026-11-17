@@ -99,6 +99,15 @@ static int  g_pad_dir[2][2];                    /* last stick direction per pad 
 static int  g_last_health[2];
 static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
 static void fe_enter(void);
+/* fight keys as DirectInput scan codes, in the order of the original config block (0x4a588a,
+ * read by FUN_00428036): per player forward and back as seen from the starting side, up, down,
+ * punch, kick. The port's defaults (the original's are C X A Z V Q / N M L , B P). */
+static uint8_t g_keys[12] = { 0x20, 0x1e, 0x11, 0x1f, 0x21, 0x22,      /* D A W S F G */
+                              0xcb, 0xcd, 0xc8, 0xd0, 0x25, 0x26 };    /* left right up down K L */
+static SDL_Scancode g_key_sc[2][6];             /* per player: screen left, right, up, down, punch, kick */
+static int di_scan(SDL_Scancode s);
+static SDL_Scancode sdl_scan(int di);
+static void keys_apply(void);
 
 /* ------------------------------------------------------------------ */
 static const uint8_t *getf(const char *fmt, int a, size_t *sz)
@@ -653,14 +662,39 @@ static void restart_fight(void)
     { char bn[8]; snprintf(bn, sizeof bn, "b%d", g_arena.id); sfx_bank_load(3, bn); }
 }
 
+static SDL_Scancode sdl_scan(int di)
+{
+    for (int sc = 1; sc < SDL_NUM_SCANCODES; sc++) if (di_scan((SDL_Scancode)sc) == di) return (SDL_Scancode)sc;
+    return SDL_SCANCODE_UNKNOWN;
+}
+
+/* player 1 starts on the left (forward = right), player 2 on the right (forward = left); the
+ * original swaps forward and back when the fighters change sides (0x4a8300), so the keys stay
+ * screen directions */
+static void keys_apply(void)
+{
+    for (int p = 0; p < 2; p++) {
+        const uint8_t *k = g_keys + 6 * p;
+        g_key_sc[p][0] = sdl_scan(p == 0 ? k[1] : k[0]);
+        g_key_sc[p][1] = sdl_scan(p == 0 ? k[0] : k[1]);
+        for (int j = 2; j < 6; j++) g_key_sc[p][j] = sdl_scan(k[j]);
+    }
+}
+
+/* a key of a human fighter: the fight hotkeys leave it alone */
+static int key_bound(SDL_Scancode sc)
+{
+    for (int p = 0; p < 2; p++)
+        for (int j = 0; j < 6; j++) if (sc && g_key_sc[p][j] == sc && !g_fight.p[p].cpu) return 1;
+    return 0;
+}
+
 /* Keyboard -> FX input bits. Screen left/right are converted to forward/back
  * using the camera orientation and the fighter's facing. */
 static void read_input(void)
 {
     const Uint8 *ks = SDL_GetKeyboardState(NULL);
-    static const SDL_Scancode keys[2][6] = {
-        { SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_F, SDL_SCANCODE_G },
-        { SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_K, SDL_SCANCODE_L } };
+    SDL_Scancode (*keys)[6] = g_key_sc;
     float ux, uy; fight_line_dir(&g_fight, &ux, &uy);
     float screen_right_u = cosf(g_view_yaw) * ux - sinf(g_view_yaw) * uy;   /* screen right . line dir */
     for (int i = 0; i < 2; i++) {
@@ -801,6 +835,10 @@ static void cfg_load(void)
         else if (!strcmp(k, "ringouts")) g_cfg.ringouts = v != 0;
         else if (!strcmp(k, "rumble")) g_cfg.rumble = v != 0;
         else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
+        else if (!strncmp(k, "key", 3)) {                 /* key1..key12: DirectInput scan codes */
+            int i = atoi(k + 3) - 1;
+            if (i >= 0 && i < 12 && v > 0 && v < 256 && sdl_scan(v)) g_keys[i] = (uint8_t)v;
+        }
     }
     fclose(f);
 }
@@ -813,6 +851,7 @@ static void cfg_save(void)
     fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\ndifficulty=%d\n",
             g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
             g_cfg.difficulty);
+    for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
 
@@ -827,6 +866,7 @@ static void cfg_apply(void)
     sfx_set_volume((float)g_cfg.sfx / 10.0f);
     g_ringouts = g_cfg.ringouts;
     g_fight.ai_level = g_cfg.difficulty;
+    keys_apply();
 }
 
 /* Game camera (FUN_004231c0): perpendicular to the fight line, distance and height from the
@@ -1450,8 +1490,8 @@ static void render_front(int w, int h)
 
 /* ---- 3D front end test (docs/FRONTEND.md, step 4): the strat VM runs FX_FE_TICKS ticks
  * (default 60) with the input script FX_FE_INPUT ("tick:KEY ..." with KEY = P1UP, P1DOWN,
- * P1LEFT, P1RIGHT, P1PUNCH, P1KICK, the same with P2, ESC; each press lasts 3 ticks), then one
- * frame is drawn ---- */
+ * P1LEFT, P1RIGHT, P1PUNCH, P1KICK, the same with P2, ESC, RAW<hex DirectInput code>; each press
+ * lasts 3 ticks), then one frame is drawn ---- */
 static void fe_script_input(FeVm *vm, const char *script, int tick)
 {
     unsigned bits[2] = { 0, 0 }; int esc = 0;
@@ -1470,7 +1510,9 @@ static void fe_script_input(FeVm *vm, const char *script, int tick)
             for (size_t k = 0; pl >= 0 && k < sizeof K / sizeof K[0]; k++)
                 if (len == strlen(K[k].k) + 2 && !strncmp(c + 2, K[k].k, len - 2)) bits[pl] |= K[k].b;
             if (len == 3 && !strncmp(c, "ESC", 3)) esc = 1;
+            if (len > 3 && !strncmp(c, "RAW", 3)) fe_vm_key_raw(vm, (int)strtol(c + 3, NULL, 16), 1);
         }
+        if (tick == t + 3 && len > 3 && !strncmp(c, "RAW", 3)) fe_vm_key_raw(vm, (int)strtol(c + 3, NULL, 16), 0);
         p = c + len;
     }
     fe_vm_set_input(vm, 0, bits[0]);
@@ -1570,6 +1612,7 @@ static void port_to_fecfg(void)
     c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
     c[FECFG_SVOL] = (uint8_t)vol_to_fe(g_cfg.sfx);
     c[FECFG_CDVOL] = (uint8_t)vol_to_fe(g_cfg.music);
+    memcpy(c + FECFG_KEYS, g_keys, sizeof g_keys);
 }
 
 static void fecfg_to_port(void)
@@ -1582,6 +1625,7 @@ static void fecfg_to_port(void)
     g_cfg.rounds = r <= 1 ? 1 : r == 2 ? 3 : 5;
     g_cfg.sfx = vol_sync(g_cfg.sfx, c[FECFG_SVOL]);
     g_cfg.music = vol_sync(g_cfg.music, c[FECFG_CDVOL]);
+    for (int i = 0; i < 12; i++) if (sdl_scan(c[FECFG_KEYS + i])) g_keys[i] = c[FECFG_KEYS + i];
 }
 
 /* system ops of the scripts (see FeVmSysFn). Like the original, the options are saved only
@@ -1653,9 +1697,7 @@ static int fe_tick(void)
 {
     const Uint8 *ks = SDL_GetKeyboardState(NULL);
 #define FE_KD(sc) (ks[sc] || g_fe_latch[sc])
-    static const SDL_Scancode keys[2][6] = {
-        { SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_F, SDL_SCANCODE_G },
-        { SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_K, SDL_SCANCODE_L } };
+    SDL_Scancode (*keys)[6] = g_key_sc;
     int esc = FE_KD(SDL_SCANCODE_ESCAPE) || FE_KD(SDL_SCANCODE_BACKSPACE);
     for (int p = 0; p < 2; p++) {
         unsigned b = 0;
@@ -1868,6 +1910,7 @@ int main(int argc, char **argv)
                 Fighter *a = &g_f[0], *b = &g_f[1];
                 SDL_Keycode k = e.key.keysym.sym;
                 if (g_state == ST_FIGHT && g_fe_mode == 0) { fe_enter(); continue; }   /* any key ends the demo */
+                if (g_state == ST_FIGHT && g_game && k != SDLK_ESCAPE && key_bound(e.key.keysym.scancode)) continue;
                 if (g_state == ST_FE3D) {             /* the scripts poll the keys once per tick */
                     SDL_Scancode sc = e.key.keysym.scancode ? e.key.keysym.scancode : SDL_GetScancodeFromKey(k);
                     if ((unsigned)sc < SDL_NUM_SCANCODES) g_fe_latch[sc] = 1;

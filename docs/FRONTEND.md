@@ -99,10 +99,17 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      a LOAD (D8) tölt, a hangerő-csúszkák (DF/E0) élőben hatnak; meccsindításkor a G → cfg átírás mentés nélkül is érvényes;
    - START_GAME: 0 bemutató (gép–gép, egy menet, bármely gomb megszakítja), 1 létra (a port létratáblájával),
      2 kétjátékos (a VM karaktereivel és arénájával), 6 kilépés, 7/8/9 a menü újraindítása, 5 (hálózat) nem érhető el;
-   - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0).
+   - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
+   - gombkiosztás: a harci bemenet (`0x428036`) játékosonként 6 gombot olvas a `0x4a588a + 6p` címről: ATTACK
+     (előre a kezdőoldalról), RETREAT, JUMP, DUCK, PUNCH, KICK (DirectInput-kódok; bitek 0x01/0x02, 0x08, 0x04, 0x10,
+     0x20). Az ATTACK és a RETREAT szerepe felcserélődik, ha a harcosok oldalt cserélnek (`0x4a8300`, a kamerafüggvény
+     állítja), vagyis a gombok képernyő-irányok: az 1. játékosnál az ATTACK a jobbra, a 2.-nál a balra gomb. A port a
+     12 kódot az `options.cfg`-ben tartja (`key1`…`key12`, alapból D A W S F G és ← → ↑ ↓ K L), a menü CONTROLS →
+     REDEFINE KEYS képernyője ezeket állítja (SAVE ment), és harcban, valamint a menüben is ezek érvényesek. A harci
+     gyorsgombok (B, N, R, M, X, 1, 2…) nem élnek, ha egy emberi játékos gombja. A nyers billentyűre várás (E4)
+     indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
-   LOADING-képernyővel), bemutató, kilépés, SAVE. Hátra van: a menüben átállított gombok használata harcban (a
-   gombok sorrendje a harci bemenetben még nincs visszafejtve), hendikep, állóképesség (3) és torna (4) – most 1P-létra –,
+   LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés. Hátra van: hendikep, állóképesség (3) és torna (4) – most 1P-létra –,
    rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.

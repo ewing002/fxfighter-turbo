@@ -28,8 +28,10 @@ Ha máshová teszed, a `FIGHT.PAC`-ot rakd mellé, vagy add meg az útvonalát p
 A 2. játékos a nyilakkal mozog, és K-val választ, L = rúgás. Vissza és kilépés: Esc (vagy Backspace). Az OPTIONS menüben a SAVE gomb
 menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek száma, a nehézség és a hangerők akkor is érvényesek, ha nem mented őket.
 Ha a `FIGHT.EXE` hiányzik, vagy `--menu2d` kapcsolóval indítod, a port régi 2D-s menüi jönnek elő.
-Még hiányzik: az állóképesség és a torna módot a port egyelőre 1 játékos létraként játssza le; nincs hálózati játék; a gombok átállítása
-a menüben működik, de harcban egyelőre a fenti, rögzített gombok érvényesek; a hendikep és a részletességi szintek nem hatnak a harcra.
+A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítani (ATTACK = előre, RETREAT = hátra a kezdőoldalról nézve);
+a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
+Még hiányzik: az állóképesség és a torna módot a port egyelőre 1 játékos létraként játssza le; nincs hálózati játék;
+a hendikep és a részletességi szintek nem hatnak a harcra.
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
@@ -39,7 +41,7 @@ Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgá
 kör hossza (30 / 60 / 90 / 99 másodperc vagy időkorlát nélkül), ringből kiesés be/ki, a gépi ellenfél nehézsége (1–8, alapértéke 5), rezgés be/ki.
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
-**Harc**
+**Harc** (alapkiosztás)
 
 | | 1. játékos | 2. játékos |
 |---|---|---|
@@ -48,7 +50,7 @@ A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\opti
 | ütés / rúgás | F / G | K / L |
 
 A 2. játékost alapból a gép irányítja. **F3**: P2 ember/gép, **F4**: P1 gép (demó), **F5**: új kör, **P**: szünet, **R**: ringből kiesés be/ki, **M**: zene be/ki, **X**: hangeffektek be/ki, **− / =**: hangerő,
-**1 / 2**: P1 harcos csere, **9 / 0**: P2 harcos csere, **N**: következő aréna.
+**1 / 2**: P1 harcos csere, **9 / 0**: P2 harcos csere, **N**: következő aréna. Ezek a gyorsgombok nem élnek, ha egy emberi játékos harci gombja.
 Néhány mozdulat: hátra + ütés nyomva tartva = védekezés, le + rúgás = gurulás, előre nyomva tartva = futás.
 
 **Néző mód (F1)**: ← / → animáció, ↑ / ↓ és PgUp / PgDn harcos, Space szünet, , / . léptetés.

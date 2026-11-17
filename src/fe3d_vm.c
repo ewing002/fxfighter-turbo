@@ -1081,6 +1081,14 @@ static uint32_t exec(FeVm *vm, int i)
     case 0xed: sys_call(vm, 0xed); return ip + 1;                         /* ladder continue (G67): host */
     case 0xe4: {                                                         /* read a raw key */
         int k, excl = vm->cfg[C_EXKEY];
+        if (!vm->raw_wait) {
+            /* a fresh wait: forget older presses, e.g. the punch key that chose the slot (the
+             * port keeps the pad and the raw key states apart, the original reads one array) */
+            for (k = 1; k < 255; k++) vm->keys[k] &= 0x70;
+            vm->raw_wait = 1;
+            vm->yield = 1;
+            return ip;
+        }
         for (k = 1; k < 255; k++) if (k != excl && raw_edge(vm, k)) break;
         if (k == 255) {
             /* the scripts busy-wait on this (strats 32/39 ...) and the original blocks until a key
@@ -1088,6 +1096,7 @@ static uint32_t exec(FeVm *vm, int i)
             vm->yield = 1;
             return ip;
         }
+        vm->raw_wait = 0;
         SL(1, fx(k));
         SL(2, fx(k ? rd8(vm, KEYMODEL + 2 * (uint32_t)k) : 0));
         return ip + 3;
@@ -1185,6 +1194,7 @@ void fe_vm_restart(FeVm *vm, int entry)
     vm->yield = vm->in_trig = vm->defer = 0;
     vm->iter_next = vm->trig_cur = vm->trig_next = -1;
     vm->mode = -1;
+    vm->raw_wait = 0;
     vm->nsnd = 0;
     vm->frame = 0;
     vm->G[58] = fx(entry);
