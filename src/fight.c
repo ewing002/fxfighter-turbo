@@ -266,7 +266,9 @@ static void start_move_t(Fight *f, int i, int m, int owner)
     p->sp = ms->moves[m].state;
     p->cont_hit = 0;
     p->solid = 1;
-    p->have_prev_box = 0;
+    if (p->have_prev_box) { p->have_prev_box = 0; memset(&p->prev_raw, 0, sizeof p->prev_raw); }
+    p->ev_lock = 0;                                /* cb540 */
+    p->edge_guard = 1;                             /* cb440 */
     uint8_t clip = ms->moves[m].clip;
     if (clip != 0xff) {
         if (clip >= 200) { p->aset = o->own; p->clip = clip - 200; }
@@ -310,16 +312,29 @@ static int opp_stance(const Fight *f, int i)
 /*  Body parts are cubes around their joint (FUN_004488ab): centre =   */
 /*  translation of the part's world matrix, half size fi[0x88+part]/256 */
 /* ================================================================== */
-static void joint_box(const Fight *f, int i, int part, float mn[3], float mx[3], float c[3])
+static void part_box(const Fight *f, int i, int part, HitBox *b)
 {
-    fight_joint(f, i, part, c);
+    fight_joint(f, i, part, b->c);
     float h = f->p[i].fi ? f->p[i].fi->part_r[part & 15] : 0.14f;
-    for (int k = 0; k < 3; k++) { mn[k] = c[k] - h; mx[k] = c[k] + h; }
+    for (int k = 0; k < 3; k++) { b->mn[k] = b->c[k] - h; b->mx[k] = b->c[k] + h; }
 }
 
-static int boxes_overlap(const float a0[3], const float a1[3], const float b0[3], const float b1[3])
+/* FUN_00448a69, as the original does it: union in x and y, but in z both the minimum AND the
+ * maximum take the lower value (so a merged box only reaches up to its lowest part's top) */
+static void box_merge(HitBox *a, const HitBox *b)
 {
-    for (int k = 0; k < 3; k++) if (a1[k] <= b0[k] || b1[k] <= a0[k]) return 0;
+    for (int k = 0; k < 2; k++) {
+        if (b->mn[k] < a->mn[k]) a->mn[k] = b->mn[k];
+        if (b->mx[k] > a->mx[k]) a->mx[k] = b->mx[k];
+    }
+    if (b->mn[2] < a->mn[2]) a->mn[2] = b->mn[2];
+    if (b->mx[2] < a->mx[2]) a->mx[2] = b->mx[2];
+    for (int k = 0; k < 3; k++) a->c[k] = (a->c[k] + b->c[k]) * 0.5f;
+}
+
+static int boxes_overlap(const HitBox *a, const HitBox *b)       /* FUN_00448b84 */
+{
+    for (int k = 0; k < 3; k++) if (a->mx[k] <= b->mn[k] || b->mx[k] <= a->mn[k]) return 0;
     return 1;
 }
 
@@ -329,29 +344,26 @@ static int hit_test(Fight *f, int i, int damage, int dir)
     if (f->hit_pending[i] || f->p[i ^ 1].ringout) return 0;
     const MoveDef *md = cur_move(a);
     int set = md->limbs < 24 ? md->limbs : 0;
-    float amn[3] = { 1e9f, 1e9f, 1e9f }, amx[3] = { -1e9f, -1e9f, -1e9f };
+    HitBox box, b;
+    memset(&box, 0, sizeof box);
     for (int k = 1; k <= LIMB_SETS[set][0] && k < 17; k++) {
-        float mn[3], mx[3], c[3];
-        joint_box(f, i, LIMB_SETS[set][k], mn, mx, c);
-        for (int q = 0; q < 3; q++) { if (mn[q] < amn[q]) amn[q] = mn[q]; if (mx[q] > amx[q]) amx[q] = mx[q]; }
+        part_box(f, i, LIMB_SETS[set][k], &b);
+        if (k == 1) box = b; else box_merge(&box, &b);
     }
-    /* FUN_004491f7: the box of this check is merged with the one of the previous check of the
-     * same move, so fast limbs sweep through the victim instead of skipping over it */
-    float cur[6] = { amn[0], amn[1], amn[2], amx[0], amx[1], amx[2] };
-    if (a->have_prev_box)
-        for (int q = 0; q < 3; q++) { amn[q] = fminf(amn[q], a->prev_box[q]); amx[q] = fmaxf(amx[q], a->prev_box[3 + q]); }
-    memcpy(a->prev_box, cur, sizeof cur);
+    /* swept test: merged with the unmerged box of the previous check of this move (a8268 / aa4c0).
+     * The store is only written from the second check on and StartMove zeroes it, so the second
+     * check of a move is merged with a zero box - kept as the original does it. */
+    if (a->have_prev_box) { HitBox prev = a->prev_raw; a->prev_raw = box; box_merge(&box, &prev); }
     a->have_prev_box = 1;
     for (int k = 0; k < 9; k++) {
-        float mn[3], mx[3], c[3];
-        joint_box(f, i ^ 1, VICTIM_PARTS[k], mn, mx, c);
-        if (boxes_overlap(amn, amx, mn, mx)) {
+        part_box(f, i ^ 1, VICTIM_PARTS[k], &b);
+        if (boxes_overlap(&box, &b)) {
             f->hit_pending[i] = 1;
             f->hit_damage[i] = damage;
             f->hit_dir[i] = dir & 3;
-            /* zone from the bottom of the victim's box, relative to 0x9999 (0.6):
+            /* zone from the CENTRE height of the victim's part, around 0x9999 (0.6):
              * below 0.4 low, below 1.0 mid, else high */
-            f->hit_zone[i] = mn[2] < 0.4f ? 2 : (mn[2] < 1.0f ? 1 : 0);
+            f->hit_zone[i] = b.c[2] < 0.4f ? 2 : (b.c[2] < 1.0f ? 1 : 0);
             if (getenv("FX_TRACE"))
                 fprintf(stderr, "HIT P%d %s -> part %d zone %d dmg %d\n", i + 1, md->name, VICTIM_PARTS[k], f->hit_zone[i], damage);
             return 1;
@@ -389,13 +401,21 @@ static void process_events(Fight *f, int i)
             }
         } else {
             unsigned op = r->op;
-            if (op > 0 && op < 100) {
-                if (p->cont_hit == 0) hit_test(f, i, damage_of(p, (int)op), r->cond >> 6);
+            /* cb540: after a hit check the events of the move are skipped until a record with
+             * op 0 or >= 0xf1 */
+            if (op == 0 || op >= 0xf1) p->ev_lock = 0;
+            if (p->ev_lock || op == 0 || op >= 0xf1) { /* nothing to do */ }
+            else if (op < 100) {
+                if (p->cont_hit == 0) {
+                    p->frame = r->fr;                 /* the check uses the pose of the event's frame */
+                    hit_test(f, i, damage_of(p, (int)op), r->cond >> 6);
+                    p->ev_lock = 1;
+                }
                 else p->cont_hit = (int)op;           /* armed by 0xd4: keep testing every tick */
                 f->hit_dir[i] = (r->cond >> 6) & 3;
             }
-            else if (op >= 100 && op < 150) { p->health -= (int)op - 100; f->cam_shake = 1; }   /* also shakes the camera */
-            else if (op >= 150 && op < 200) p->health -= (int)op - 150;
+            else if (op >= 100 && op < 150) { p->frame = r->fr; p->health -= (int)op - 100; f->cam_shake = 1; }   /* also shakes the camera */
+            else if (op >= 150 && op < 200) { p->frame = r->fr; p->health -= (int)op - 150; }
             else if (op >= 0xd0 && op <= 0xd2) set_mode_from_op(f, i, op, 0);
             else if (op >= 0xcc && op <= 0xce) {      /* break free: enough input changes so far */
                 int need = p->fi ? p->fi->mash[op - 0xcc] : 25;
@@ -405,6 +425,7 @@ static void process_events(Fight *f, int i)
             else if (op == 0xd4) p->cont_hit = -1;
             else if (op == 0xd8) p->turn_flag ^= 1;
             else if (op == 0xd9) p->solid ^= 1;
+            else if (op == 0xda) p->edge_guard ^= 1;
             else if (op == 0xde) fighter_sound(f, i, r->tgt);
             else if (op == 0xdc) { p->health += 30; if (p->health > MAX_HEALTH) p->health = MAX_HEALTH; }
             else if (op == 0xe0) p->frame = r->fr;
@@ -805,6 +826,15 @@ static void move_modes(Fight *f, int i)
 /* ================================================================== */
 /*  Spacing (0x43fbca): soft push by body radii                        */
 /* ================================================================== */
+static float body_height(const Fight *f, int i)  /* centre of the merged thorax (15) + left forearm (4) boxes */
+{
+    HitBox t, r;
+    part_box(f, i, 15, &t);
+    part_box(f, i, 4, &r);
+    box_merge(&t, &r);
+    return t.c[2];
+}
+
 static void spacing(Fight *f)
 {
     for (int i = 0; i < 2; i++) {
@@ -816,71 +846,99 @@ static void spacing(Fight *f)
         if (p->radius > target) { p->radius -= 0.02f; if (p->radius < target) p->radius = target; }
     }
     Player *a = &f->p[0], *b = &f->p[1];
-    if (a->ringout || b->ringout) return;
-    float pa[3], pb[3];
-    fight_joint(f, 0, 7, pa); fight_joint(f, 1, 7, pb);
-    float dz = fabsf(pa[2] - pb[2]);
-    float g = b->s - a->s;
-    if (!(a->solid && b->solid) || dz >= 0.65f) { f->last_gap = g; return; }
-    /* no passing through each other */
-    if (f->last_gap != 0 && (g > 0) != (f->last_gap > 0)) {
-        a->s += g * 0.5f; b->s -= g * 0.5f;
-        g = b->s - a->s;
+    float g = b->s - a->s;                        /* local_74 */
+    if (a->ringout || b->ringout) { f->last_gap = g; return; }
+    float zd = fabsf(body_height(f, 0) - body_height(f, 1));
+    int cross = (g < 0) != (f->last_gap < 0);     /* local_44: the sides swapped since the remembered gap */
+    int ga = cur_move(a)->cls == 3, gb = cur_move(b)->cls == 3;   /* a fighter on the floor is not pushed */
+    if (a->solid && b->solid && zd < 0.65f) {
+        float d = fabsf(g) - (a->radius + b->radius);
+        if (d < 0) {                              /* push apart by 0.3 of the overlap, towards the remembered sides */
+            d *= 0.3f;
+            if (f->last_gap <= 0) { if (ga) b->s += d; else a->s -= d; if (gb) a->s -= d; else b->s += d; }
+            else                  { if (ga) b->s -= d; else a->s += d; if (gb) a->s += d; else b->s -= d; }
+        }
+        if (cross) {                              /* passed through each other: meet in the middle */
+            float l = g * 0.5f;
+            if (ga) b->s -= l; else a->s += l;
+            if (gb) a->s += l; else b->s -= l;
+        }
+        if (f->last_gap != 0) g = f->last_gap;    /* a8264 keeps the side from before the contact */
     }
-    float deficit = fabsf(g) - (a->radius + b->radius);
-    if (deficit < 0) {
-        float corr = -deficit * 0.3f, sg = g >= 0 ? 1.f : -1.f;
-        int ga = cur_move(a)->cls == 3, gb = cur_move(b)->cls == 3;
-        if (ga && !gb) b->s += sg * corr * 2;
-        else if (gb && !ga) a->s -= sg * corr * 2;
-        else { a->s -= sg * corr; b->s += sg * corr; }
-    }
-    f->last_gap = b->s - a->s;
+    f->last_gap = g;
 }
 
 /* ================================================================== */
 /*  Ring edge (0x4408f9) and ring-out (0x43f36e)                       */
 /* ================================================================== */
+static float outside(const float c[3], float half) { return fmaxf(fabsf(c[0]), fabsf(c[1])) - half; }
+
+/* The pelvis keeps `margin` (0.5, or 1.8 when ring-outs are off or the opponent's pelvis has
+ * been out) from the walls at ring_half + 1.3, measured ALONG the fight line in both directions. */
 static void ring_edge(Fight *f, int i)
 {
     Player *p = &f->p[i];
-    if (p->ringout) return;
-    float lim = f->ring_half + 1.3f - (f->ringouts ? 0.5f : 1.8f);
-    if (p->mode >= 1 && p->mode <= 3) lim = fminf(lim, f->ring_half - 0.3f);   /* a jump does not carry out of the ring */
-    float ux, uy; fight_line_dir(f, &ux, &uy);
-    for (int it = 0; it < 2; it++) {
-        float c[3]; fight_joint(f, i, 7, c);
-        float t = 0;
-        if (c[0] > lim && fabsf(ux) > 0.05f) t = (lim - c[0]) / ux;
-        else if (c[0] < -lim && fabsf(ux) > 0.05f) t = (-lim - c[0]) / ux;
-        else if (c[1] > lim && fabsf(uy) > 0.05f) t = (lim - c[1]) / uy;
-        else if (c[1] < -lim && fabsf(uy) > 0.05f) t = (-lim - c[1]) / uy;
-        if (t == 0) break;
-        p->s += t;
+    if (p->ringout || (cur_move(p)->stance & 0x3f) == 8) return;
+    float W = f->ring_half + 1.3f;
+    float margin = (f->p[i ^ 1].pelvis_out || (p->edge_guard && !f->ringouts)) ? 1.8f : 0.5f;
+    float c[3], ux, uy;
+    fight_joint(f, i, 7, c);
+    fight_line_dir(f, &ux, &uy);
+    float t[4] = { 0, 0, 0, 0 };                   /* (pelvis - wall) / direction for the 4 walls */
+    if (ux != 0) { t[0] = (c[0] + W) / ux; t[1] = (c[0] - W) / ux; }
+    if (uy != 0) { t[2] = (c[1] + W) / uy; t[3] = (c[1] - W) / uy; }
+    float behind = 65535.f, ahead = -65535.f;
+    for (int k = 0; k < 4; k++) {
+        if (t[k] > 0 && t[k] < behind) behind = t[k];
+        if (t[k] < 0 && t[k] > ahead) ahead = t[k];
+    }
+    int push_fwd = behind - margin < 0, push_back = margin + ahead > 0;
+    if (push_fwd) p->s += margin - behind;
+    if (push_back) p->s -= margin + ahead;
+    if (p->mode >= 1 && p->mode <= 3) {           /* own decision: a jump does not carry out of the ring */
+        float lim = f->ring_half - 0.3f;
+        for (int it = 0; it < 2; it++) {
+            fight_joint(f, i, 7, c);
+            float s = 0;
+            if (c[0] > lim && fabsf(ux) > 0.05f) s = (lim - c[0]) / ux;
+            else if (c[0] < -lim && fabsf(ux) > 0.05f) s = (-lim - c[0]) / ux;
+            else if (c[1] > lim && fabsf(uy) > 0.05f) s = (lim - c[1]) / uy;
+            else if (c[1] < -lim && fabsf(uy) > 0.05f) s = (-lim - c[1]) / uy;
+            if (s == 0) break;
+            p->s += s;
+        }
     }
 }
 
-static float outside(const float c[3], float half) { return fmaxf(fabsf(c[0]), fabsf(c[1])) - half; }
-
-static void ring_out_check(Fight *f, int i)
+/* pelvis position followed with a 0.1 dead zone at 1/4 of the excess (end of 0x43fbca) */
+static void track_pelvis(Fight *f, int i, int snap)
 {
     Player *p = &f->p[i];
-    if (!f->ringouts || f->winner >= 0 || p->ringout) return;
-    float pel[3], lf[3], rf[3], sk[3];
-    fight_joint(f, i, 7, pel); fight_joint(f, i, 1, lf); fight_joint(f, i, 9, rf); fight_joint(f, i, 14, sk);
+    float c[3];
+    fight_joint(f, i, 7, c);
+    if (snap) { p->tx = c[0]; p->ty = c[1]; return; }
+    if (c[0] > p->tx + 0.1f) p->tx += (c[0] - (p->tx + 0.1f)) / 4.f;
+    if (c[0] < p->tx - 0.1f) p->tx -= ((p->tx - 0.1f) - c[0]) / 4.f;
+    if (c[1] > p->ty + 0.1f) p->ty += (c[1] - (p->ty + 0.1f)) / 4.f;
+    if (c[1] < p->ty - 0.1f) p->ty -= ((p->ty - 0.1f) - c[1]) / 4.f;
+}
+
+/* 0x43f36e. `farther` (0x445002): only the fighter further from the centre can fall out. */
+static void ring_out_check(Fight *f, int i, int farther)
+{
+    Player *p = &f->p[i];
+    if (p->ringout) return;
+    float pel[3], lf[3], rf[3];
+    fight_joint(f, i, 7, pel); fight_joint(f, i, 1, lf); fight_joint(f, i, 9, rf);
     float h = f->ring_half;
-    int off = outside(pel, h - 0.1f) > 0;
+    if (outside(pel, h - 0.1f) > 0) p->pelvis_out = 1;          /* df3c8, kept until the round ends */
     int feet_out = outside(lf, h) > 0 || outside(rf, h) > 0;
+    if (!f->ringouts || f->winner >= 0 || farther != i) return;
+    /* the fall is picked by facing (cb490) and whether the opponent's pelvis has been out */
+    int same = !facing_away(f, i) == !f->p[i ^ 1].pelvis_out;
     int m = -1;
-    float nx = 0, ny = 0;                         /* outward normal at the pelvis */
-    if (fabsf(pel[0]) > fabsf(pel[1])) nx = pel[0] > 0 ? 1.f : -1.f; else ny = pel[1] > 0 ? 1.f : -1.f;
-    if (pel[2] < 0.15f && off) {
-        m = ((sk[0] - pel[0]) * nx + (sk[1] - pel[1]) * ny) > 0 ? MOVE_RO_HEAD : MOVE_RO_FEET;
-    } else if (pel[2] > 0.15f && feet_out && (lf[2] < 0.2f || rf[2] < 0.2f)) {
-        float ux, uy; fight_line_dir(f, &ux, &uy);
-        float lx = ux * (float)p->face, ly = uy * (float)p->face;
-        m = (lx * nx + ly * ny) > 0 ? MOVE_RO_STEP : MOVE_RO_BACK;
-    }
+    if (pel[2] < 0.15f && p->pelvis_out) m = same ? MOVE_RO_HEAD : MOVE_RO_FEET;
+    else if (pel[2] >= 0.15f && feet_out && (lf[2] < 0.2f || rf[2] < 0.2f)) m = same ? MOVE_RO_BACK : MOVE_RO_STEP;
     if (m < 0) return;
     start_move(f, i, m);
     p->ringout = 1;
@@ -933,17 +991,23 @@ void fight_reset(Fight *f)
         p->radius = 0.3f;
         p->ringout = 0; p->vz = 0; p->have_prev_box = 0;
         p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0;
+        p->pelvis_out = 0;
         f->hit_pending[i] = 0;
     }
     for (int i = 0; i < 2; i++) start_move(f, i, MOVE_STAND);
     f->last_gap = f->p[1].s - f->p[0].s;
+    for (int i = 0; i < 2; i++) track_pelvis(f, i, 1);
 }
 
 void fight_tick(Fight *f)
 {
     if (f->winner >= 0 || f->round_age < f->start_delay) { f->p[0].in = f->p[1].in = 0; }
 
-    for (int i = 0; i < 2; i++) ring_out_check(f, i);
+    {   /* 0x445002: player 2 is checked when he is at least as far from the centre */
+        int farther = f->p[0].tx * f->p[0].tx + f->p[0].ty * f->p[0].ty <=
+                      f->p[1].tx * f->p[1].tx + f->p[1].ty * f->p[1].ty;
+        for (int i = 0; i < 2; i++) ring_out_check(f, i, farther);
+    }
     for (int i = 0; i < 2; i++) {
         Player *p = &f->p[i];
         if (p->in != p->prev_in) p->mash++;       /* 0x44176b: every input change counts for breaking free */
@@ -977,6 +1041,8 @@ void fight_tick(Fight *f)
     }
     spacing(f);
     for (int i = 0; i < 2; i++) ring_edge(f, i);
+    for (int i = 0; i < 2; i++) track_pelvis(f, i, 0);
+    for (int i = 0; i < 2; i++) ring_edge(f, i);   /* 0x43fbca runs it twice */
     for (int i = 0; i < 2; i++) {                 /* dizzy meter recovers (around 0x4f1b..., per frame) */
         Player *p = &f->p[i];
         p->stun -= 5.f * (p->fi ? p->fi->stun_decay : 0.4f);

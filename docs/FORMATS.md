@@ -139,8 +139,12 @@ Az AI nem nyom gombot: az aktuális mozdulat átmenetei közül választ, és a 
 ### Találat (`0x4491f7`, `0x448cbb`)
 A testrészek **kockák az ízületi pontjuk körül** (`FUN_004488ab`): a középpont a testrész világmátrixának eltolása, a fél élhossz
 `fi%d[0x88 + testrész] / 256` (jellemzően 35/256 ≈ 0,14, a medence 50, a mellkas 150). Nem a háló bounding boxa!
-A támadó csoport kockáinak uniója kerül összevetésre az áldozat [Skull, LHumerus, RHumerus, LTibia, RTibia, Pelvis, LFemur, RFemur, Neck]
-kockáival, sorrendben. A zóna a talált kocka középpontjának Z-je: < 0,4 alacsony, < 1,0 közép, egyébként magas.
+A támadó csoport kockáit a `0x448a69` vonja össze: x-ben és y-ban unió, z-ben viszont az alsó ÉS a felső határ is a kisebbik
+értéket kapja (az eredeti hibája, a port megtartja). Ezt veti össze az áldozat [Skull, LHumerus, RHumerus, LTibia, RTibia, Pelvis, LFemur, RFemur, Neck]
+kockáival, sorrendben (a lista mind a négy védekezési állapotban ugyanaz). A zóna a talált kocka középpontjának Z-je: < 0,4 alacsony, < 1,0 közép, egyébként magas.
+Söprés: a doboz a mozdulat előző vizsgálatának (össze nem vont) dobozával is összevonódik (`a8268` / `aa4c0`). A tároló csak a második
+vizsgálattól íródik, és a StartMove nullázza, ezért a mozdulat második vizsgálata egy nulla dobozzal vonódik össze (szintén az eredeti szerint).
+A vizsgálat előtt a képkocka az esemény `fr`-jére áll, utána a mozdulat eseményei egy 0-s vagy ≥ 0xF1-es rekordig nem futnak (`cb540`).
 A 0xD4-es opkód után a következő támadó esemény "folyamatos": a vizsgálat minden tickben megismétlődik, amíg talál vagy véget ér a mozdulat.
 Sebzés = `op × fi[0x40] × fi[0x44] × nehézségi szorzó` (gyakorlatilag az `op`). Visszalökés: 0,1 / 0,2 / 0,3 az irány (`cond>>6`) szerint.
 **Kombó** (`0x448cbb`): ha az áldozat a találat előtt reakciómozdulatban volt (`0x4a4ac0` jelzőtábla, a StartMove a `cb4c8`-ba írja),
@@ -181,9 +185,15 @@ A harc egy vonal mentén zajlik (`a8684` mátrix, a két 1D pozíció: `a8280`/`
 - **lendítő ütések** (lásd fent).
 
 Ugrás és kitörés (`0x440f42`): a 0xD0/D1/D2 ugrás helyben/előre/hátra (sebesség ±2 egység / 32 tick), a 0xD5/D6/D7 kitörés az ellenfél felé (a távolsággal, +1, −1 sebességgel).
-Taszítás (`0x43fbca`): a testsugarak összegénél közelebb nem mehetnek, kivéve ha az egyik a földön fekszik, vagy 0,65-nél nagyobb a magasságkülönbség.
-Ringhatár (`0x4408f9`): a medence legfeljebb `félméret + 1,3 − 0,5` távolságra mehet (ringből kiesés nélkül −1,8).
-Ringből kiesés (`0x43f36e`): ha egy lábfej kilóg a ringből és a harcos áll → RING OUT STEP / BACKWARDS (6/7); ha a medence kint van és a harcos fekszik → RING OUT SLIDE HEAD / FEET (9/10). Ezzel elveszíti a kört.
+Taszítás (`0x43fbca`): ha mindkettő szilárd (`a8260`) és a „testmagasságuk” (a mellkas és a bal alkar kockájának átlagolt középpontja) 0,65-nél kevésbé tér el,
+a sugarak összegénél kisebb távolság 0,3-ával tolja szét őket, az érintkezés előtti oldal felé (`a8264`, érintkezés közben nem frissül).
+A földön fekvő (osztály 3) helyett a másik mozdul. Ha átjutottak egymáson, a régi távolság felével a közép felé húzza őket.
+Ringhatár (`0x4408f9`): a medencétől a harcvonal mentén mért távolság mindkét irányban a `félméret + 1,3` falakig legalább 0,5
+(1,8, ha ki van kapcsolva a kiesés és a mozdulat 0xDA-val nem oldotta fel, vagy ha az ellenfél medencéje már kint járt). Dobás alatt nem tol.
+Ringből kiesés (`0x43f36e`): tickenként csak a középtől messzebb lévő harcos vizsgálható (`0x445002`, 0,1-es holtsávval követett medence-pozíciókkal).
+A „medence kint” jelző (`df3c8`: |x| vagy |y| > félméret − 0,1) a kör végéig megmarad. Fekvő medence (z < 0,15) és a jelző → RING OUT SLIDE HEAD / FEET (9/10);
+álló harcos, kilógó és talajközeli (z < 0,2) lábfej → RING OUT BACKWARDS / STEP (7/6). Az első változat (9, illetve 7) akkor jön,
+ha a harcos az ellenfél felé néz és annak medencéje nem járt kint, vagy háttal áll és járt kint; egyébként a második. Ezzel elveszíti a kört.
 
 ## Hang ✅
 ### `sound/*.asf` – 4 bites DPCM (dekóder: `FUN_0044f7b1`, rutinok `0x44f7e6` / `0x44fb1e`)

@@ -24,7 +24,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 | `0x41d5b0` | háttér: a kamerához rögzített `bground.dat` sáv, kameraforduló = 320 egység görgetés |
 | `0x4221b2` | kamerarendező: mozdulatkamera; ring széle (harcos a széltől 1,8-on belül, távolság < 4: szög 90 ± 12·(3,5 − táv), dőlés 83 − 8·(3,5 − táv)), ha a részletesség (`0x4a5888`) ≥ 1 |
 | `0x421728` | rögzített nézetek: Home be/ki (`4a4be0`), Ins/Del a 8–15. előbeállítás, PgUp/PgDn távolság (2–8), nyilak szög/dőlés (30–80) |
-| `0x4491f7` | találatvizsgálat: a támadó végtagjainak dobozai összevonva + az előző vizsgálat doboza (söprés) |
+| `0x4491f7` | találatvizsgálat: a támadó végtagjainak dobozai összevonva (`0x448a69`, z-ben a kisebbik felső határ) + az előző vizsgálat doboza (söprés); zóna a talált kocka középpontjából |
+| `0x43fbca` / `0x4408f9` / `0x43f36e` | taszítás, ringhatár (a harcvonal mentén mérve), ringből kiesés (csak a középtől messzebb lévő harcos) |
 | `0x440f42` | ugrás és földet érés (a8290: függőleges eltolás, a legalsó láb a talajra igazítva) |
 | `0x496150` | 1 játékos létra: harcosonként 4 sorrend × 15 bájt (7 harcos, majd a főellenségek: 10, 11, 9), a 12-es sorai üresek |
 

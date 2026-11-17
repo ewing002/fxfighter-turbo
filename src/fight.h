@@ -69,6 +69,9 @@ typedef struct {
 
 int fighter_info_load(FighterInfo *fi, const uint8_t *cmp, size_t size);
 
+/* hit cube of a body part (FUN_004488ab): centre, min, max (the original's 10-int box) */
+typedef struct { float c[3], mn[3], mx[3]; } HitBox;
+
 typedef struct {
     /* static data */
     const MoveSet *ms;               /* own move table */
@@ -103,8 +106,12 @@ typedef struct {
     int    solid;          /* a8260 */
     int    ringout;        /* fell out of the ring */
     float  vz;             /* vertical speed while falling out of the ring */
-    int    have_prev_box;  /* a8268: attack box of the previous hit check (swept test) */
-    float  prev_box[6];
+    int    have_prev_box;  /* a8268: a hit check of this move already ran (swept test) */
+    HitBox prev_raw;       /* aa4c0: unmerged box of the previous check, zeroed by StartMove */
+    int    ev_lock;        /* cb540: after a hit check the move's events wait for an op 0 / >= 0xf1 record */
+    int    edge_guard;     /* cb440: 1 from StartMove, op 0xda toggles; with ring-outs off keeps 1.8 from the edge */
+    int    pelvis_out;     /* df3c8: pelvis was past the ring edge this round (sticky) */
+    float  tx, ty;         /* a8330 / a8320: pelvis position followed with a 0.1 dead zone */
     const Model *mesh;     /* body parts (for keeping the feet on the floor), optional */
     int    nmesh;
 } Player;
