@@ -394,7 +394,7 @@ static void process_events(Fight *f, int i)
                 else p->cont_hit = (int)op;           /* armed by 0xd4: keep testing every tick */
                 f->hit_dir[i] = (r->cond >> 6) & 3;
             }
-            else if (op >= 100 && op < 150) p->health -= (int)op - 100;
+            else if (op >= 100 && op < 150) { p->health -= (int)op - 100; f->cam_shake = 1; }   /* also shakes the camera */
             else if (op >= 150 && op < 200) p->health -= (int)op - 150;
             else if (op >= 0xd0 && op <= 0xd2) set_mode_from_op(f, i, op, 0);
             else if (op >= 0xcc && op <= 0xce) {      /* break free: enough input changes so far */

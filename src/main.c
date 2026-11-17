@@ -8,6 +8,8 @@
  *   Player 1: A/D = left/right, W = up (jump), S = down (duck), F = punch, G = kick
  *   Player 2: arrows, K = punch, L = kick   (CPU-controlled unless --2p or F3)
  *   F3 toggle P2 human/CPU   F4 toggle P1 CPU (demo)   F5 restart round   R ring-outs on/off
+ *   Home fixed camera view on/off, Insert / Delete next / previous view, PageUp / PageDown distance,
+ *   arrows (P2 = CPU) turn / tilt the fixed view, Shift = fine steps
  *   M music on/off   X sound effects on/off   - / = music volume   (music/trackNN.mp3 from the CD, optional)
  *   Up/Down arrows are P2 keys - fighters are changed with 1/2 (P1) and 9/0 (P2)
  *
@@ -853,6 +855,30 @@ static float cam_preset(int k, int j)
  * mode 0 follows the fight, mode 2 eases the angles back, mode 1 eases everything to a preset */
 static int   g_cm_mode, g_cm_auto, g_cm_focus = -1, g_cm_preset, g_cm_hold, g_cm_ringcam;
 static float g_cm_yaw = 90, g_cm_pitch = 88, g_cm_dist = 3.4f, g_cm_ty, g_cm_tp, g_cm_td, g_cm_rate = 32;
+static int   g_cm_edge;                     /* 4a4bc8 1/2: ring edge view active (FUN_004221b2) */
+/* fixed views (FUN_00421728): Home toggles, Insert / Delete pick one of the presets 8..15,
+ * PageUp / PageDown distance, arrows (when player 2 is the CPU) turn and tilt; Shift = fine */
+static int   g_fixed_view, g_fixed_k = 8;
+static float g_fixed[8][3] = { { 96, 90, 8 }, { 138, 78, 8 }, { 60, 78, 8 }, { 90, 62, 6 },
+                               { 144, 62, 6 }, { 46, 62, 6 }, { 162, 74, 4 }, { 36, 74, 4 } };
+static float g_shake_amp, g_shake_dec, g_shake_ph;   /* 4a4bd4 / 4a4bd8 / 4a4bdc */
+
+static void fixed_view_key(SDL_Keycode k, int fine)
+{
+    float *v = g_fixed[g_fixed_k - 8];
+    switch (k) {
+    case SDLK_HOME:     g_fixed_view = !g_fixed_view; break;
+    case SDLK_INSERT:   g_fixed_k = ((g_fixed_k + 1) & 7) + 8; break;
+    case SDLK_DELETE:   g_fixed_k = ((g_fixed_k - 1) & 7) + 8; break;
+    case SDLK_PAGEUP:   v[2] -= fine ? 0.1f : 1.f; if (v[2] < 2) v[2] = 2; break;
+    case SDLK_PAGEDOWN: v[2] += fine ? 0.1f : 1.f; if (v[2] > 8) v[2] = 8; break;
+    case SDLK_LEFT:     v[0] -= fine ? 2.f : 5.f; if (v[0] <= 0) v[0] += 360; break;
+    case SDLK_RIGHT:    v[0] += fine ? 2.f : 5.f; if (v[0] > 360) v[0] -= 360; break;
+    case SDLK_UP:       v[1] -= fine ? 2.f : 5.f; if (v[1] <= 30) v[1] = 30; break;
+    case SDLK_DOWN:     v[1] += fine ? 2.f : 5.f; if (v[1] > 80) v[1] = 80; break;
+    default: break;
+    }
+}
 
 static void cam_set_preset(int k, int focus, int mode)
 {
@@ -882,7 +908,7 @@ static void camera_step(int snap)
     if (snap || fabsf(D - g_cam_D) > 0.01f) g_cam_D = D;
     /* line angle: starts following when more than 30 degrees off, 1/32 of the error per tick */
     float target = atan2f(uy, ux) * 57.29578f;
-    if (snap) { g_cam_line = target; g_cam_track = 0; g_cm_mode = 0; g_cm_preset = 0; g_cm_ringcam = 0; g_cm_focus = -1; }
+    if (snap) { g_cam_line = target; g_cam_track = 0; g_cm_mode = 0; g_cm_preset = 0; g_cm_ringcam = 0; g_cm_focus = -1; g_cm_edge = 0; }
     float d = wrap180(target - g_cam_line);
     if (d < -30 || d > 30) g_cam_track = 1;
     if (g_cam_track) {
@@ -905,6 +931,28 @@ static void camera_step(int snap)
     } else if (g_cm_preset && ++g_cm_hold > FIGHT_HZ) {
         g_cm_preset = 0; cam_set_preset(0, -1, 2);
     }
+    /* ring edge (FUN_004221b2): a fighter within 1.8 of the edge and the two closer than 4.0:
+     * the camera swings by 12 * (3.5 - gap) degrees and drops to 83 - 8 * (3.5 - gap) */
+    if (!mc && !g_cm_preset && !g_fight.p[0].ringout && !g_fight.p[1].ringout && !snap) {
+        float lim = g_fight.ring_half - 1.8f;
+        int e = 0;
+        if (fabsf(x0) > lim || fabsf(y0) > lim) e |= 1;
+        if (fabsf(x1) > lim || fabsf(y1) > lim) e |= 2;
+        if (e == 3) e = (x0 * x0 + y0 * y0 <= x1 * x1 + y1 * y1) ? 2 : 1;   /* the one further out */
+        float gp = fabsf(g_fight.p[1].s - g_fight.p[0].s);
+        if ((e == 1 || e == 2) && gp < 4.0f) {
+            float a = 3.5f - gp; if (a < 0) a = 0;
+            /* player 1 is always on the left here, which the original gets by flipping the sign */
+            g_cm_mode = 2; g_cm_auto = 0; g_cm_focus = -1; g_cm_rate = 32;
+            g_cm_ty = 90.f + (e == 1 ? -12.f : 12.f) * a;
+            g_cm_tp = 83.f - 8.f * a;
+            if (getenv("FX_CAMTRACE") && g_cm_edge != e) printf("%d edge view: P%d gap %.2f -> yaw %.0f pitch %.0f\n", g_fight.round_age, e, gp, g_cm_ty, g_cm_tp);
+            g_cm_edge = e;
+        } else if (g_cm_edge) {
+            if (getenv("FX_CAMTRACE")) printf("%d edge view off (gap %.2f)\n", g_fight.round_age, gp);
+            g_cm_edge = 0; cam_set_preset(0, -1, 2);           /* FUN_00420f87(0, 2): ease back */
+        }
+    }
     /* falling out of the ring: look at the faller */
     for (int i = 0; i < 2; i++)
         if (g_fight.p[i].ringout && !g_cm_ringcam && !mc) { g_cm_ringcam = 1; g_cm_preset = 0x7f; cam_set_preset(11, i, 1);
@@ -925,6 +973,21 @@ static void camera_step(int snap)
         g_cm_pitch = ease(g_cm_pitch, g_cm_tp, g_cm_rate, 15);
         g_cm_dist = ease(g_cm_dist, g_cm_td, g_cm_rate, 15);
     }
+    float yaw = g_cm_yaw, cpitch = g_cm_pitch, cdist = g_cm_dist;
+    if (g_fixed_view && g_fight.winner < 0) {               /* 4a4be0: fixed view (off for the round end) */
+        const float *v = g_fixed[g_fixed_k - 8];
+        yaw = v[0]; cpitch = v[1]; cdist = v[2]; g_cm_focus = -1;
+    }
+    if (g_fight.cam_shake) {                               /* self damage: vertical shake */
+        g_fight.cam_shake = 0;
+        g_shake_amp = 0.1f; g_shake_dec = 0.008f; g_shake_ph = 0;
+    }
+    float shake = 0;
+    if (g_shake_amp > 0) {
+        shake = sinf(g_shake_ph / 57.29578f) * g_shake_amp;
+        g_shake_amp -= g_shake_dec;
+        g_shake_ph += 45.f;
+    }
     /* centre: between the fighters, or on the fighter the preset focuses on */
     float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
     if (g_cm_focus == 0) { cx = x0; cy = y0; }
@@ -933,15 +996,15 @@ static void camera_step(int snap)
     else { g_cam_x += (cx - g_cam_x) * 0.15f; g_cam_y += (cy - g_cam_y) * 0.15f; }
 
     float zoom = g_dist / 3.6f;
-    float dist = g_cm_dist * zoom;
-    float pitch = g_cm_pitch - (g_pitch - 0.28f) * 57.3f;    /* mouse: tilt */
+    float dist = cdist * zoom;
+    float pitch = cpitch - (g_pitch - 0.28f) * 57.3f;      /* mouse: tilt */
     float pr = pitch / 57.29578f;
-    float ang = (g_cam_line - (g_cm_yaw - 90.0f) + g_yaw_ofs * 57.29578f) / 57.29578f;
+    float ang = (g_cam_line - (yaw - 90.0f) + g_yaw_ofs * 57.29578f) / 57.29578f;
     float fx = -sinf(ang), fy = cosf(ang);               /* towards the scene, line to the right */
     float horiz = sinf(pr) * dist;
     g_eye[0] = g_cam_x - fx * horiz;
     g_eye[1] = g_cam_y - fy * horiz;
-    g_eye[2] = cosf(pr) * dist + 0.5f;
+    g_eye[2] = cosf(pr) * dist + 0.5f + shake;
     /* camera tilt: RotX(pitch - 4 deg) . RotX(0x9c4 = 13.73 deg) from looking straight down */
     float elev = (pitch - 4.0f + 13.733f - 90.0f) / 57.29578f;
     g_cdir[0] = fx * cosf(elev); g_cdir[1] = fy * cosf(elev); g_cdir[2] = sinf(elev);
@@ -1535,6 +1598,11 @@ int main(int argc, char **argv)
                 }
                 else if (k == SDLK_b) g_show_bg = !g_show_bg;
                 else if (g_game) {
+                    int fine = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                    int arrow = k == SDLK_LEFT || k == SDLK_RIGHT || k == SDLK_UP || k == SDLK_DOWN;
+                    if (k == SDLK_HOME || k == SDLK_INSERT || k == SDLK_DELETE || k == SDLK_PAGEUP || k == SDLK_PAGEDOWN ||
+                        (arrow && g_fixed_view && g_fight.p[1].cpu))   /* arrows are player 2's keys otherwise */
+                        fixed_view_key(k, fine);
                     switch (k) {
                     case SDLK_F3: g_fight.p[1].cpu = !g_fight.p[1].cpu; break;
                     case SDLK_F4: g_fight.p[0].cpu = !g_fight.p[0].cpu; break;

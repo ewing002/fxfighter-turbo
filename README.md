@@ -49,6 +49,8 @@ Néhány mozdulat: hátra + ütés nyomva tartva = védekezés, le + rúgás = g
 
 **Néző mód (F1)**: ← / → animáció, ↑ / ↓ és PgUp / PgDn harcos, Space szünet, , / . léptetés.
 Harc közben: egérhúzás = kamera forgatása (a kamera magától követi a harcvonalat), görgő = zoom, B = háttér, F11 = teljes képernyő, **Esc = vissza a főmenübe** (a főmenüben Esc = kilépés).
+Rögzített kameranézetek, mint az eredetiben: **Home** = be/ki, **Insert / Delete** = következő / előző a 8 nézetből, **PgUp / PgDn** = közelebb / távolabb,
+nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb lépések.
 
 A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
 

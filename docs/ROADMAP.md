@@ -22,6 +22,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 | `0x4231c0` | **kamera**: távolság 0,9·D + 1,6, a függőlegestől mért szög 95 − D/0,3 fok, magasság +0,5, a harcvonal követése 30 fokos holtsávval |
 | `0x42106c` / `0x4a4be8` | kamera-előbeállítások (128 db: szög, dőlés, távolság, sebesség), a mozdulatok 0x21-es bájtja választja ki |
 | `0x41d5b0` | háttér: a kamerához rögzített `bground.dat` sáv, kameraforduló = 320 egység görgetés |
+| `0x4221b2` | kamerarendező: mozdulatkamera; ring széle (harcos a széltől 1,8-on belül, távolság < 4: szög 90 ± 12·(3,5 − táv), dőlés 83 − 8·(3,5 − táv)), ha a részletesség (`0x4a5888`) ≥ 1 |
+| `0x421728` | rögzített nézetek: Home be/ki (`4a4be0`), Ins/Del a 8–15. előbeállítás, PgUp/PgDn távolság (2–8), nyilak szög/dőlés (30–80) |
 | `0x4491f7` | találatvizsgálat: a támadó végtagjainak dobozai összevonva + az előző vizsgálat doboza (söprés) |
 | `0x440f42` | ugrás és földet érés (a8290: függőleges eltolás, a legalsó láb a talajra igazítva) |
 | `0x496150` | 1 játékos létra: harcosonként 4 sorrend × 15 bájt (7 harcos, majd a főellenségek: 10, 11, 9), a 12-es sorai üresek |
@@ -43,7 +45,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 - ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).
 - A sima színű lapok egy fix árnyalatot kapnak a bankból (¾-es fényerő) + OpenGL-világítást. Az eredeti a `colmap.tab` árnyalótáblával számolt, ezt pontosabban is lehetne emulálni.
 - A háttér az eredeti `bground.dat` elrendezését követi; a függőleges eltolás egyik futásidejű értékét (0x4f1b5a) becsültem.
-- A kamera a mozdulatok kamera-előbeállításait (dobások, győzelem, vereség) használja; a pálya szélén használt külön kamera és a SAT/CAR/SIDE kamerák még hiányoznak.
+- A kamera a mozdulatok kamera-előbeállításait, a ring szélén használt nézetet és a rögzített nézeteket az eredeti szerint kezeli. A saját sebzésre (op 100–149) a kamera függőlegesen megrázkódik (0,1 amplitúdó, tickenként 45°, 0,008-cal csillapodik).
+  A „SAT CAM / CAR CAM / SIDE CAM” BRender-kamerák (`0x4a1e38`) halott adatok, semmi nem hivatkozik rájuk.
 - Az ugrás íve most az eredeti képlet (FUN_00440f42: (t·v + t²·g/2)·s + 0,3), kb. 1,4 m magas. A talajhoz igazítás a modellek legalsó csúcspontját használja, így a talp a padlón áll.
 - Ugrás közben a harcos nem jut ki a ringből (saját döntés); ütés, dobás vagy kilépés után továbbra is ki lehet esni.
 - A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.

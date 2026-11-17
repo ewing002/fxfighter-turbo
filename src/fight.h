@@ -125,6 +125,7 @@ typedef struct {
     int    round_secs;     /* round length in seconds, 0 = default 60, <0 = no time limit */
     int    hold;           /* 1 = do not start the next round automatically (the front end runs the match) */
     int    ai_level;       /* CPU difficulty 0..7 (0x4a587c, default 4); the caller sets it */
+    int    cam_shake;      /* set by self damage ops 100..149 (4a4bd4); the front end clears it */
     /* sound events for the front end: bank 0 generic, 1/2 player, 3 arena; 1-based index */
     int    nsnd;
     struct { uint8_t bank, index; } snd[32];

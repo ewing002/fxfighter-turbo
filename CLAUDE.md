@@ -56,7 +56,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 - Játékfrekvencia: 48 Hz (`FIGHT_HZ`).
 - Harcosmodellek: `fm%d.dat`, a modell lokális −Y irányba néz, Z felfelé.
 - Mozdulattáblák: `moves/f%d.hdr` (36 bájtos rekordok) és `.ste` (12 bájtos állapotgép-lépések). Részletek: `docs/FORMATS.md`.
-- Kamera: `0x4231c0` (képlet), `0x4a4be8` (előbeállítások). A mozdulat 0x21-es bájtja választja ki az előbeállítást.
+- Kamera: `0x4231c0` (képlet), `0x4a4be8` (előbeállítások), `0x4221b2` (rendező: mozdulatkamera, ring széle). A mozdulat 0x21-es bájtja választja ki az előbeállítást. `FX_CAMTRACE=1` kiírja a ring szélén használt nézet váltásait.
 - Találat: a támadó dobozai összevonva az előző ellenőrzés dobozával (söprés), `0x4491f7`.
 - Ugrás: `FUN_00440f42` képlete, +0,3 alappal.
 - Talajhoz igazítás: a modell legalacsonyabb pontja (`lowest_joint`).
@@ -67,7 +67,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 1. **AI apróságok:** az eredeti AI kész. A `0x424d8f` pontos eltolása hiányzik. A 13-as harcos a szimulátorban összeomlik.
 2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
 3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Az effektje (`f1a48`) hiányzik.
-4. **Kamera:** a pálya szélén használt külön nézet és a SAT/CAR/SIDE nézetek hiányoznak.
+4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
 5. **Menük:** a `winfront.c` pontos elrendezése nincs visszafejtve, a pozíciók szemre vannak.
 6. **Folytatás, stáblista, rekordtábla, FMV:** nincs kész.
 7. **Színezés:** a `colmap.tab` árnyalótáblát nem emulálja.
