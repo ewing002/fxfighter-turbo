@@ -23,17 +23,21 @@ Windows 10/11-en, Linuxon és macOS-en is fordítható.
 Indítsd el a `port\bin-win64\fxfighter.exe`-t. A program magától megtalálja a két szinttel feljebb lévő `FIGHT.PAC`-ot.
 Ha máshová teszed, a `FIGHT.PAC`-ot rakd mellé, vagy add meg az útvonalát paraméterként.
 
-**Menük:** fel/le/balra/jobbra a W/A/S/D vagy a nyilak, választás: Enter, Space vagy F; vissza: Esc.
-Karakterválasztáskor 2 játékos módban az 1. játékos a W/A/S/D + F, a 2. játékos a nyilak + Enter (vagy K) gombokkal választ.
-A portrék közül az utolsó (?) véletlen harcost választ.
+**Menük:** az eredeti 3D menük futnak: a menüszkripteket a port a saját `FIGHT.EXE`-dből olvassa ki (a `FIGHT.PAC` mellől),
+és az eredeti módon futtatja őket. Az 1. játékos a W/A/S/D gombokkal mozog, és F-fel (vagy Enterrel, Space-szel) választ, G = rúgás.
+A 2. játékos a nyilakkal mozog, és K-val választ, L = rúgás. Vissza és kilépés: Esc (vagy Backspace). Az OPTIONS menüben a SAVE gomb
+menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek száma, a nehézség és a hangerők akkor is érvényesek, ha nem mented őket.
+Ha a `FIGHT.EXE` hiányzik, vagy `--menu2d` kapcsolóval indítod, a port régi 2D-s menüi jönnek elő.
+Még hiányzik: az állóképesség és a torna módot a port egyelőre 1 játékos létraként játssza le; nincs hálózati játék; a gombok átállítása
+a menüben működik, de harcban egyelőre a fenti, rögzített gombok érvényesek; a hendikep és a részletességi szintek nem hatnak a harcra.
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
-Menükben: d-pad vagy bal kar = mozgás, A = választás, B = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
+Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgás, B / Back = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
 
-**Beállítások (OPTIONS a főmenüben):** teljes képernyő / ablak, VSync, zene és hangeffektek hangereje (0–10), körök száma (1, 3 vagy 5 körös meccs),
+**Beállítások (a régi 2D-s OPTIONS menüben, `--menu2d`):** teljes képernyő / ablak, VSync, zene és hangeffektek hangereje (0–10), körök száma (1, 3 vagy 5 körös meccs),
 kör hossza (30 / 60 / 90 / 99 másodperc vagy időkorlát nélkül), ringből kiesés be/ki, a gépi ellenfél nehézsége (1–8, alapértéke 5), rezgés be/ki.
-A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
+A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
 **Harc**
 
@@ -48,14 +52,14 @@ A 2. játékost alapból a gép irányítja. **F3**: P2 ember/gép, **F4**: P1 g
 Néhány mozdulat: hátra + ütés nyomva tartva = védekezés, le + rúgás = gurulás, előre nyomva tartva = futás.
 
 **Néző mód (F1)**: ← / → animáció, ↑ / ↓ és PgUp / PgDn harcos, Space szünet, , / . léptetés.
-Harc közben: egérhúzás = kamera forgatása (a kamera magától követi a harcvonalat), görgő = zoom, B = háttér, F11 = teljes képernyő, **Esc = vissza a főmenübe** (a főmenüben Esc = kilépés).
+Harc közben: egérhúzás = kamera forgatása (a kamera magától követi a harcvonalat), görgő = zoom, B = háttér, F11 = teljes képernyő, **Esc = vissza a főmenübe**. A bemutató harcot (tétlenség után indul) bármelyik gomb megszakítja.
 Rögzített kameranézetek, mint az eredetiben: **Home** = be/ki, **Insert / Delete** = következő / előző a 8 nézetből, **PgUp / PgDn** = közelebb / távolabb,
 nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb lépések.
 
 A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
 
 Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
-valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen title|menu|select|arena|vs`.
+valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen title|menu|select|arena|vs|fe3d --menu2d`.
 
 ## Zene
 A játék eredetileg CD-audio sávokat játszott le. A `tools/rip_cd.py` a CD-képből (BIN + CUE) MP3-at készít:

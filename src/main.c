@@ -79,7 +79,7 @@ static float g_bg_turn = 90, g_cm_pitch_bg = 88;
 #define CAM_ASPECT 1.46f
 
 /* ---- front end / match state ---- */
-enum { ST_TITLE, ST_MENU, ST_SELECT, ST_ARENA, ST_VS, ST_OPTIONS, ST_FIGHT };
+enum { ST_TITLE, ST_MENU, ST_SELECT, ST_ARENA, ST_VS, ST_OPTIONS, ST_FIGHT, ST_FE3D };
 static int  g_state = ST_TITLE, g_state_t;      /* current screen, ticks spent in it */
 static int  g_two_players;                      /* match type: 0 = 1 player vs CPU ladder, 1 = 2 players */
 static int  g_debug_fight;                      /* started from the command line: endless rounds */
@@ -97,6 +97,8 @@ static int  g_opt_sel, g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
 static int  g_pad_dir[2][2];                    /* last stick direction per pad (menu navigation) */
 static int  g_last_health[2];
+static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
+static void fe_enter(void);
 
 /* ------------------------------------------------------------------ */
 static const uint8_t *getf(const char *fmt, int a, size_t *sz)
@@ -537,9 +539,14 @@ static void draw_background_flat(int w, int h)
 }
 
 static void render_front(int w, int h);
+static FeAssets g_fe;
+static FeVm     g_vm;
+static FeScene  g_fesc;
+static float    g_fe_alpha = 1;     /* drawing position between the last two VM ticks */
 
 static void render(int w, int h)
 {
+    if (g_state == ST_FE3D) { fe_vm_scene_lerp(&g_vm, &g_fesc, g_fe_alpha); fe_gl_render(&g_fe, &g_fesc, w, h); return; }
     if (g_state != ST_FIGHT) { render_front(w, h); return; }
     glViewport(0, 0, w, h);
     glClearColor(0.02f, 0.02f, 0.06f, 1);
@@ -1142,6 +1149,11 @@ static void after_match(void)
         fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1);
         return;
     }
+    if (g_fe_ok && g_fe_mode >= 0) {                /* started from the 3D front end */
+        if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
+        fe_enter();
+        return;
+    }
     if (g_two_players) { g_pick[0] = g_pick[1] = 0; set_state(ST_SELECT); return; }
     if (g_fight.winner == 0) {
         if (++g_ladder_pos < g_nladder) { set_state(ST_VS); return; }
@@ -1157,7 +1169,7 @@ static void match_tick(void)
 {
     if (g_match_over_t > 0) { if (--g_match_over_t == 0) after_match(); return; }
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
-        int need = g_cfg.rounds / 2 + 1;
+        int need = g_fe_mode == 0 ? 1 : g_cfg.rounds / 2 + 1;   /* attract demo: one round */
         if (g_fight.p[0].wins >= need || g_fight.p[1].wins >= need) g_match_over_t = 3 * FIGHT_HZ;
         else { g_round++; fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1); }
     }
@@ -1438,10 +1450,11 @@ static void render_front(int w, int h)
 
 /* ---- 3D front end test (docs/FRONTEND.md, step 4): the strat VM runs FX_FE_TICKS ticks
  * (default 60) with the input script FX_FE_INPUT ("tick:KEY ..." with KEY = P1UP, P1DOWN,
- * P1LEFT, P1RIGHT, P1PUNCH, P1KICK, ESC; each press lasts 3 ticks), then one frame is drawn ---- */
+ * P1LEFT, P1RIGHT, P1PUNCH, P1KICK, the same with P2, ESC; each press lasts 3 ticks), then one
+ * frame is drawn ---- */
 static void fe_script_input(FeVm *vm, const char *script, int tick)
 {
-    unsigned bits = 0; int esc = 0;
+    unsigned bits[2] = { 0, 0 }; int esc = 0;
     for (const char *p = script; p && *p; ) {
         while (*p == ' ') p++;
         int t = atoi(p);
@@ -1451,15 +1464,17 @@ static void fe_script_input(FeVm *vm, const char *script, int tick)
         size_t len = strcspn(c, " ");
         if (tick >= t && tick < t + 3) {
             static const struct { const char *k; unsigned b; } K[] = {
-                { "P1UP", IN_UP }, { "P1DOWN", IN_DOWN }, { "P1LEFT", IN_BACK }, { "P1RIGHT", IN_FWD },
-                { "P1PUNCH", IN_PUNCH }, { "P1KICK", IN_KICK } };
-            for (size_t k = 0; k < sizeof K / sizeof K[0]; k++)
-                if (len == strlen(K[k].k) && !strncmp(c, K[k].k, len)) bits |= K[k].b;
+                { "UP", IN_UP }, { "DOWN", IN_DOWN }, { "LEFT", IN_BACK }, { "RIGHT", IN_FWD },
+                { "PUNCH", IN_PUNCH }, { "KICK", IN_KICK } };
+            int pl = len > 2 && c[0] == 'P' && (c[1] == '1' || c[1] == '2') ? c[1] - '1' : -1;
+            for (size_t k = 0; pl >= 0 && k < sizeof K / sizeof K[0]; k++)
+                if (len == strlen(K[k].k) + 2 && !strncmp(c + 2, K[k].k, len - 2)) bits[pl] |= K[k].b;
             if (len == 3 && !strncmp(c, "ESC", 3)) esc = 1;
         }
         p = c + len;
     }
-    fe_vm_set_input(vm, 0, bits);
+    fe_vm_set_input(vm, 0, bits[0]);
+    fe_vm_set_input(vm, 1, bits[1]);
     fe_vm_key_esc(vm, esc);
 }
 
@@ -1477,7 +1492,7 @@ static int fe3d_shot(const char *path, SDL_Window *win)
     const char *ticks = getenv("FX_FE_TICKS"), *input = getenv("FX_FE_INPUT");
     int n = ticks ? atoi(ticks) : 60;
     for (int t = 0; t < n && vm.mode < 0; t++) { fe_script_input(&vm, input, t); fe_vm_tick(&vm); }
-    fe_vm_scene(&vm, &sc);
+    fe_vm_scene_lerp(&vm, &sc, getenv("FX_FE_ALPHA") ? (float)atof(getenv("FX_FE_ALPHA")) : 1.0f);
     int w, h;
     SDL_GL_GetDrawableSize(win, &w, &h);
     fe_gl_render(&fe, &sc, w, h);
@@ -1492,6 +1507,203 @@ static int fe3d_shot(const char *path, SDL_Window *win)
     fe_gl_free();
     fe_assets_free(&fe);
     return 0;
+}
+
+/* ==================================================================
+ * 3D front end (docs/FRONTEND.md, step 5): the original menu scripts run in the strat VM;
+ * the port feeds the input, plays the sounds and music, keeps the options in sync and starts
+ * the match the scripts ask for (op 0xD7).
+ * ================================================================== */
+#define FE_TICK (1.0 / 15.0)                    /* the scripts run at 15 Hz */
+static uint8_t  g_fe_latch[SDL_NUM_SCANCODES];  /* keys pressed since the last VM tick */
+static int      g_fe_ticks;                     /* ticks since fe_enter (FX_FE_INPUT test scripts) */
+
+/* SDL scan code -> DirectInput (PC set 1) scan code, as stored in fight.prf and read by op 0xE4 */
+static int di_scan(SDL_Scancode s)
+{
+    static uint8_t t[SDL_NUM_SCANCODES];
+    static int init;
+    if (!init) {
+        static const char *rows[3] = { "qwertyuiop", "asdfghjkl", "zxcvbnm" };
+        static const uint8_t base[3] = { 0x10, 0x1e, 0x2c };
+        for (int r = 0; r < 3; r++)
+            for (int k = 0; rows[r][k]; k++) t[SDL_SCANCODE_A + (rows[r][k] - 'a')] = (uint8_t)(base[r] + k);
+        for (int k = 0; k < 9; k++) t[SDL_SCANCODE_1 + k] = (uint8_t)(2 + k);
+        t[SDL_SCANCODE_0] = 0x0b;
+        for (int k = 0; k < 10; k++) t[SDL_SCANCODE_F1 + k] = (uint8_t)(0x3b + k);
+        static const struct { SDL_Scancode s; uint8_t d; } x[] = {
+            { SDL_SCANCODE_ESCAPE, 0x01 }, { SDL_SCANCODE_MINUS, 0x0c }, { SDL_SCANCODE_EQUALS, 0x0d },
+            { SDL_SCANCODE_BACKSPACE, 0x0e }, { SDL_SCANCODE_TAB, 0x0f }, { SDL_SCANCODE_LEFTBRACKET, 0x1a },
+            { SDL_SCANCODE_RIGHTBRACKET, 0x1b }, { SDL_SCANCODE_RETURN, 0x1c }, { SDL_SCANCODE_LCTRL, 0x1d },
+            { SDL_SCANCODE_SEMICOLON, 0x27 }, { SDL_SCANCODE_APOSTROPHE, 0x28 }, { SDL_SCANCODE_GRAVE, 0x29 },
+            { SDL_SCANCODE_LSHIFT, 0x2a }, { SDL_SCANCODE_BACKSLASH, 0x2b }, { SDL_SCANCODE_COMMA, 0x33 },
+            { SDL_SCANCODE_PERIOD, 0x34 }, { SDL_SCANCODE_SLASH, 0x35 }, { SDL_SCANCODE_RSHIFT, 0x36 },
+            { SDL_SCANCODE_KP_MULTIPLY, 0x37 }, { SDL_SCANCODE_LALT, 0x38 }, { SDL_SCANCODE_SPACE, 0x39 },
+            { SDL_SCANCODE_CAPSLOCK, 0x3a }, { SDL_SCANCODE_KP_7, 0x47 }, { SDL_SCANCODE_KP_8, 0x48 },
+            { SDL_SCANCODE_KP_9, 0x49 }, { SDL_SCANCODE_KP_MINUS, 0x4a }, { SDL_SCANCODE_KP_4, 0x4b },
+            { SDL_SCANCODE_KP_5, 0x4c }, { SDL_SCANCODE_KP_6, 0x4d }, { SDL_SCANCODE_KP_PLUS, 0x4e },
+            { SDL_SCANCODE_KP_1, 0x4f }, { SDL_SCANCODE_KP_2, 0x50 }, { SDL_SCANCODE_KP_3, 0x51 },
+            { SDL_SCANCODE_KP_0, 0x52 }, { SDL_SCANCODE_KP_PERIOD, 0x53 }, { SDL_SCANCODE_F11, 0x57 },
+            { SDL_SCANCODE_F12, 0x58 }, { SDL_SCANCODE_KP_ENTER, 0x9c }, { SDL_SCANCODE_RCTRL, 0x9d },
+            { SDL_SCANCODE_KP_DIVIDE, 0xb5 }, { SDL_SCANCODE_RALT, 0xb8 }, { SDL_SCANCODE_HOME, 0xc7 },
+            { SDL_SCANCODE_UP, 0xc8 }, { SDL_SCANCODE_PAGEUP, 0xc9 }, { SDL_SCANCODE_LEFT, 0xcb },
+            { SDL_SCANCODE_RIGHT, 0xcd }, { SDL_SCANCODE_END, 0xcf }, { SDL_SCANCODE_DOWN, 0xd0 },
+            { SDL_SCANCODE_PAGEDOWN, 0xd1 }, { SDL_SCANCODE_INSERT, 0xd2 }, { SDL_SCANCODE_DELETE, 0xd3 } };
+        for (size_t k = 0; k < sizeof x / sizeof x[0]; k++) t[x[k].s] = x[k].d;
+        init = 1;
+    }
+    return (unsigned)s < SDL_NUM_SCANCODES ? t[s] : 0;
+}
+
+/* options: the port keeps options.cfg; the scripts see the same values in the config block
+ * (volumes 1..8 there, 0..10 in the port; round time 30/60/90/none; rounds to win 1..3) */
+static int vol_to_fe(int v) { int r = (v * 8 + 5) / 10; return r < 1 ? 1 : r > 8 ? 8 : r; }
+static int vol_from_fe(int v) { if (v < 1) v = 1; if (v > 8) v = 8; return (v * 10 + 4) / 8; }
+static int vol_sync(int port, int fe) { return vol_to_fe(port) == fe ? port : vol_from_fe(fe); }   /* no drift */
+
+static void port_to_fecfg(void)
+{
+    uint8_t *c = g_vm.cfg;
+    c[FECFG_DIFF] = (uint8_t)g_cfg.difficulty;
+    int rt = g_cfg.round_secs > 90 ? 90 : g_cfg.round_secs;          /* 99 s: not in the original */
+    c[FECFG_RTIME] = (uint8_t)(rt & 0xff); c[FECFG_RTIME + 1] = (uint8_t)((rt >> 8) & 0xff);
+    c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
+    c[FECFG_SVOL] = (uint8_t)vol_to_fe(g_cfg.sfx);
+    c[FECFG_CDVOL] = (uint8_t)vol_to_fe(g_cfg.music);
+}
+
+static void fecfg_to_port(void)
+{
+    const uint8_t *c = g_vm.cfg;
+    g_cfg.difficulty = c[FECFG_DIFF] > 7 ? 7 : c[FECFG_DIFF];
+    int rt = (int16_t)(c[FECFG_RTIME] | c[FECFG_RTIME + 1] << 8);
+    g_cfg.round_secs = rt < 0 ? -1 : (rt == 30 || rt == 90) ? rt : 60;
+    int r = c[FECFG_ROUNDS];
+    g_cfg.rounds = r <= 1 ? 1 : r == 2 ? 3 : 5;
+    g_cfg.sfx = vol_sync(g_cfg.sfx, c[FECFG_SVOL]);
+    g_cfg.music = vol_sync(g_cfg.music, c[FECFG_CDVOL]);
+}
+
+/* system ops of the scripts (see FeVmSysFn). Like the original, the options are saved only
+ * by the SAVE item and read back by LOAD; the volumes follow the sliders live. */
+static void fe_sys(FeVm *vm, int op, void *user)
+{
+    (void)user;
+    switch (op) {
+    case 0xd8: cfg_load(); cfg_apply(); port_to_fecfg(); fe_vm_cfg_to_g(vm); break;   /* LOAD */
+    case 0xd9: case 0xdd: fecfg_to_port(); cfg_apply(); cfg_save(); break;           /* SAVE */
+    case 0xdf: g_cfg.sfx = vol_sync(g_cfg.sfx, vm->cfg[FECFG_SVOL]); sfx_set_volume((float)g_cfg.sfx / 10.0f); break;
+    case 0xe0: g_cfg.music = vol_sync(g_cfg.music, vm->cfg[FECFG_CDVOL]); music_set_volume((float)g_cfg.music / 10.0f); break;
+    default: break;
+    }
+}
+
+static int fe_load(void)
+{
+    char exe[1100];
+    snprintf(exe, sizeof exe, "%sFIGHT.EXE", g_pac_dir);
+    const char *err = "VM init failed";
+    if (!fe_assets_load(&g_fe, &g_pac, exe, &err) || !fe_vm_init(&g_vm, &g_fe)) {
+        fprintf(stderr, "3D front end unavailable (%s), using the 2D menus\n", err);
+        return 0;
+    }
+    g_vm.sys = fe_sys;
+    fe_gl_init(&g_fe);
+    return 1;
+}
+
+static void fe_enter(void)
+{
+    g_fe_mode = -1; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
+    port_to_fecfg();
+    fe_vm_restart(&g_vm, 0);
+    memset(g_fe_latch, 0, sizeof g_fe_latch);
+    g_fe_ticks = 0;
+    set_state(ST_FE3D);
+}
+
+/* match asked for by START_GAME: 0 demo, 1 one player ladder, 2 two players,
+ * 3 endurance / 4 tournament (not in the port yet: a one player ladder with the player's fighter) */
+static void fe_start_match(int m)
+{
+    int p1 = g_vm.p1, p2 = g_vm.p2, ar = g_vm.arena;
+    fe_vm_g_to_cfg(&g_vm);                       /* the options as set in the menu, saved or not */
+    fecfg_to_port();
+    cfg_apply();
+    if (m == 3 || m == 4) { p1 = g_vm.G[11] >> 16; m = 1; }
+    if (!fighter_exists(p1)) p1 = random_fighter();
+    if (!fighter_exists(p2) || p2 == p1) p2 = next_fighter(p1, 1);
+    g_fe_mode = m;
+    if (m == 2) {
+        g_two_players = 1; g_pick[0] = p1; g_pick[1] = p2;
+        g_arena_sel = ar >= 1 && ar <= 11 ? ar : (p2 <= 11 ? p2 : 1);
+        start_vs_fight();
+    } else if (m == 1) {
+        g_two_players = 0; g_pick[0] = p1;
+        build_ladder(p1);
+        start_vs_fight();
+    } else {
+        g_two_players = 0;
+        begin_match(p1, p2, ar >= 1 && ar <= 11 ? ar : (p2 <= 11 ? p2 : 1), 1, 1);
+    }
+}
+
+/* one VM tick; returns 0 when the scripts asked to quit */
+static int fe_tick(void)
+{
+    const Uint8 *ks = SDL_GetKeyboardState(NULL);
+#define FE_KD(sc) (ks[sc] || g_fe_latch[sc])
+    static const SDL_Scancode keys[2][6] = {
+        { SDL_SCANCODE_A, SDL_SCANCODE_D, SDL_SCANCODE_W, SDL_SCANCODE_S, SDL_SCANCODE_F, SDL_SCANCODE_G },
+        { SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT, SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_K, SDL_SCANCODE_L } };
+    int esc = FE_KD(SDL_SCANCODE_ESCAPE) || FE_KD(SDL_SCANCODE_BACKSPACE);
+    for (int p = 0; p < 2; p++) {
+        unsigned b = 0;
+        if (FE_KD(keys[p][0])) b |= IN_BACK;                    /* menus: IN_BACK = left, IN_FWD = right */
+        if (FE_KD(keys[p][1])) b |= IN_FWD;
+        if (FE_KD(keys[p][2])) b |= IN_UP;
+        if (FE_KD(keys[p][3])) b |= IN_DOWN;
+        if (FE_KD(keys[p][4])) b |= IN_PUNCH;
+        if (FE_KD(keys[p][5])) b |= IN_KICK;
+        if (p == 0 && (FE_KD(SDL_SCANCODE_SPACE) || FE_KD(SDL_SCANCODE_RETURN) || FE_KD(SDL_SCANCODE_KP_ENTER))) b |= IN_PUNCH;
+        SDL_GameController *gc = g_pad[p];
+        if (gc) {
+            int ax = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
+            int ay = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_LEFT) || ax < -20000) b |= IN_BACK;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || ax > 20000) b |= IN_FWD;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_UP) || ay < -20000) b |= IN_UP;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_DPAD_DOWN) || ay > 20000) b |= IN_DOWN;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_A) || SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_X) ||
+                SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_START)) b |= IN_PUNCH;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_Y)) b |= IN_KICK;
+            if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_B) || SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_BACK)) esc = 1;
+        }
+        fe_vm_set_input(&g_vm, p, b);
+    }
+    for (int sc = 1; sc < SDL_NUM_SCANCODES; sc++) {             /* raw keys (redefine screens) */
+        int d = di_scan((SDL_Scancode)sc);
+        if (d > 1) fe_vm_key_raw(&g_vm, d, FE_KD(sc));
+    }
+    fe_vm_key_esc(&g_vm, esc);
+#undef FE_KD
+    if (getenv("FX_FE_INPUT")) fe_script_input(&g_vm, getenv("FX_FE_INPUT"), g_fe_ticks);   /* testing */
+    g_fe_ticks++;
+    memset(g_fe_latch, 0, sizeof g_fe_latch);
+
+    fe_vm_tick(&g_vm);
+    for (int s; (s = fe_vm_pop_sound(&g_vm)) >= 0; ) sfx_play(0, s);
+    if (g_vm.music == 2) music_play(14);                         /* op E9: menu music */
+    else if (g_vm.music == -2) music_stop();                     /* op EA, START_GAME */
+    g_vm.music = 0;
+    if (g_vm.mode < 0) return 1;
+    int m = g_vm.mode;
+    if (getenv("FX_AUTOTEST")) { printf("fe3d mode %d p1 %d p2 %d arena %d\n", m, g_vm.p1, g_vm.p2, g_vm.arena); fflush(stdout); }
+    if (m == 6) return 0;                                        /* Exit */
+    if (m >= 7) { fe_vm_restart(&g_vm, m == 7 ? 0 : m); return 1; }
+    if (m == 5) { fe_vm_restart(&g_vm, 0); return 1; }           /* network: not available */
+    fe_start_match(m);
+    return 1;
 }
 
 static int screenshot_mode(const char *path, SDL_Window *win)
@@ -1547,7 +1759,7 @@ int main(int argc, char **argv)
     load_names();
 
     float cli_pitch = -99, cli_dist = -1;
-    int arena = -1, p1 = -1, p2 = -1, ticks = 0, two_players = 0, demo = 0, screen = -1;
+    int arena = -1, p1 = -1, p2 = -1, ticks = 0, two_players = 0, demo = 0, screen = -1, menu2d = 0;
     const char *shot = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--arena") && i + 1 < argc) { arena = atoi(argv[++i]); g_debug_fight = 1; }
@@ -1564,6 +1776,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--2p")) { two_players = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--demo")) { demo = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--fight")) g_debug_fight = 1;
+        else if (!strcmp(argv[i], "--menu2d")) menu2d = 1;     /* the old 2D menus */
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
             static const char *names[] = { "title", "menu", "select", "arena", "vs", "options", "fe3d" };
             for (int k = 0; k < 7; k++) if (!strcmp(argv[i + 1], names[k])) screen = k;
@@ -1589,6 +1802,7 @@ int main(int argc, char **argv)
         cfg_load();
         cfg_apply();
         for (int i = 0; i < SDL_NumJoysticks(); i++) pad_added(i);
+        if (!menu2d) g_fe_ok = fe_load();
     }
     srand(shot ? 1234u : (unsigned)SDL_GetTicks() ^ 0x5eed);
 
@@ -1605,7 +1819,8 @@ int main(int argc, char **argv)
         if (cli_dist > 0) g_dist = cli_dist;
         if (getenv("FX_KEEP_YAW")) g_yaw = yaw;
         g_two_players = two_players;
-    } else set_state(ST_TITLE);
+    } else if (g_fe_ok) fe_enter();
+    else set_state(ST_TITLE);
 
     if (shot) {
         if (screen == 6) return fe3d_shot(shot, win);   /* 3D front end, driven by the VM */
@@ -1652,16 +1867,25 @@ int main(int argc, char **argv)
             } else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
                 Fighter *a = &g_f[0], *b = &g_f[1];
                 SDL_Keycode k = e.key.keysym.sym;
+                if (g_state == ST_FIGHT && g_fe_mode == 0) { fe_enter(); continue; }   /* any key ends the demo */
+                if (g_state == ST_FE3D) {             /* the scripts poll the keys once per tick */
+                    SDL_Scancode sc = e.key.keysym.scancode ? e.key.keysym.scancode : SDL_GetScancodeFromKey(k);
+                    if ((unsigned)sc < SDL_NUM_SCANCODES) g_fe_latch[sc] = 1;
+                }
                 /* keys valid everywhere */
                 if (k == SDLK_m) music_toggle();
-                else if (k == SDLK_x && g_state != ST_FIGHT) sfx_toggle();
+                else if (k == SDLK_x && g_state != ST_FIGHT && g_state != ST_FE3D) sfx_toggle();
                 else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) { if (g_cfg.music > 0) g_cfg.music--; cfg_apply(); cfg_save(); }
                 else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) { if (g_cfg.music < 10) g_cfg.music++; cfg_apply(); cfg_save(); }
                 else if (k == SDLK_F11 || (k == SDLK_RETURN && (SDL_GetModState() & KMOD_ALT))) {
                     g_cfg.fullscreen = !g_cfg.fullscreen; cfg_apply(); cfg_save();
                 }
+                else if (g_state == ST_FE3D) { }
                 else if (g_state != ST_FIGHT) { if (!front_key(k)) running = 0; }
-                else if (k == SDLK_ESCAPE) { g_game = 1; g_debug_fight = 0; g_fight_paused = 0; set_state(ST_MENU); }
+                else if (k == SDLK_ESCAPE) {
+                    if (g_fe_ok) fe_enter();
+                    else { g_game = 1; g_debug_fight = 0; g_fight_paused = 0; set_state(ST_MENU); }
+                }
                 else if (k == SDLK_p || k == SDLK_PAUSE) g_fight_paused = !g_fight_paused;
                 else if (k == SDLK_x) sfx_toggle();
                 else if (k == SDLK_F1) { g_game = !g_game; if (g_game) { g_yaw = -1.5708f; g_pitch = 0.28f; g_dist = 3.6f; } }
@@ -1717,7 +1941,12 @@ int main(int argc, char **argv)
         if (dt > 0.25) dt = 0.25;
         if (getenv("FX_SPEED")) dt *= atof(getenv("FX_SPEED"));   /* testing: fast forward */
         acc += dt;
-        if (g_state != ST_FIGHT) {
+        if (g_state == ST_FE3D) {
+            while (acc >= FE_TICK && g_state == ST_FE3D) { if (!fe_tick()) running = 0; acc -= FE_TICK; }
+            if (g_state != ST_FE3D) acc = 0;
+            g_fe_alpha = (float)(acc / FE_TICK);   /* 15 Hz scripts, smooth drawing */
+            if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
+        } else if (g_state != ST_FIGHT) {
             while (acc >= 1.0 / FIGHT_HZ) { front_tick(); acc -= 1.0 / FIGHT_HZ; }
             if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
         } else if (g_game) {

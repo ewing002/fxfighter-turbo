@@ -124,6 +124,7 @@ static int spawn(FeVm *vm, int32_t x, int32_t y, int32_t z, int32_t rx, int32_t 
     FeActor *a = &vm->a[i];
     memset(a, 0, sizeof *a);
     a->live = 1;
+    vm->has_prev[i] = 0;
     a->parent = a->child = a->sib_next = a->sib_prev = -1;
     a->target = a->hit = a->trig = -1;
     a->strat = strat;
@@ -1163,6 +1164,10 @@ void fe_vm_seed(FeVm *vm, uint32_t seed) { vm->rng = seed; }
 
 void fe_vm_tick(FeVm *vm)                                           /* FUN_00404902 */
 {
+    for (int k = 0; k < FEVM_MAX_ACTORS; k++) {
+        vm->has_prev[k] = (uint8_t)vm->a[k].live;
+        if (vm->a[k].live) memcpy(vm->prev[k], &vm->a[k].f[O_RX / 4], sizeof vm->prev[k]);
+    }
     int i = vm->head;
     while (i >= 0) {
         vm->iter_next = vm->a[i].next;
@@ -1217,7 +1222,26 @@ int fe_vm_live(const FeVm *vm)
     return n;
 }
 
-void fe_vm_scene(const FeVm *vm, FeScene *sc)
+void fe_vm_scene(const FeVm *vm, FeScene *sc) { fe_vm_scene_lerp(vm, sc, 1.0f); }
+
+#define LERP_MAX_ROT (1200 << 16)   /* 120 degrees per tick */
+#define LERP_MAX_POS (400 << 16)    /* 0.4 world units per tick */
+
+static double lerp_field(const FeVm *vm, int i, int k, float t)
+{
+    int32_t cur = vm->a[i].f[O_RX / 4 + k];
+    if (t >= 1.0f || !vm->has_prev[i]) return cur;
+    int64_t d = (int64_t)cur - vm->prev[i][k];
+    if (k < 3) {                                    /* angle: the short way round */
+        d %= FULLTURN;
+        if (d > FULLTURN / 2) d -= FULLTURN;
+        if (d < -FULLTURN / 2) d += FULLTURN;
+        if (d > LERP_MAX_ROT || d < -LERP_MAX_ROT) return cur;
+    } else if (k < 6 && (d > LERP_MAX_POS || d < -LERP_MAX_POS)) return cur;
+    return (double)cur - (double)d * (1.0 - t);
+}
+
+void fe_vm_scene_lerp(const FeVm *vm, FeScene *sc, float t)
 {
     static int node_of[FEVM_MAX_ACTORS];
     sc->count = 0;
@@ -1231,15 +1255,11 @@ void fe_vm_scene(const FeVm *vm, FeScene *sc)
         const FeActor *a = &vm->a[i];
         FeNode *n = &sc->n[node_of[i]];
         n->type = (a->brtype == 1 && a->model < FE_NUM_TYPES) ? a->model : -1;
-        n->pos[0] = (float)(FL(a, O_X) / 65536000.0);
-        n->pos[1] = (float)(FL(a, O_Y) / 65536000.0);
-        n->pos[2] = (float)(FL(a, O_Z) / 65536000.0);
-        n->rot[0] = (float)(FL(a, O_RX) / 655360.0);
-        n->rot[1] = (float)(FL(a, O_RY) / 655360.0);
-        n->rot[2] = (float)(FL(a, O_RZ) / 655360.0);
-        n->scale[0] = (float)(FL(a, O_SX) / 16777216.0);     /* y/z may differ (strat 91) */
-        n->scale[1] = (float)(FL(a, O_SY) / 16777216.0);
-        n->scale[2] = (float)(FL(a, O_SZ) / 16777216.0);
+        for (int k = 0; k < 3; k++) {
+            n->rot[k] = (float)(lerp_field(vm, i, k, t) / 655360.0);
+            n->pos[k] = (float)(lerp_field(vm, i, 3 + k, t) / 65536000.0);
+            n->scale[k] = (float)(lerp_field(vm, i, 6 + k, t) / 16777216.0);   /* y/z may differ (strat 91) */
+        }
         n->parent = a->rparent >= 0 ? node_of[a->rparent] : -1;
         n->world = a->rworld;
         n->hidden = a->rstyle == 1;

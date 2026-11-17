@@ -23,6 +23,10 @@
 #define FEVM_NOPT       128      /* OPT[] = DAT_004f3870 */
 #define FEVM_NSND       32
 #define FEVM_CFG        0x2a     /* config block DAT_004a5878 (fight.prf) */
+/* byte offsets in the config block: handicaps (4), CPU level (0x4a587c), round time (int16 seconds,
+ * -1 = none), rounds to win, 12 key scan codes, game speed, sound / CD volume (1..8) */
+enum { FECFG_HC = 0, FECFG_DIFF = 4, FECFG_RTIME = 6, FECFG_ROUNDS = 8, FECFG_KEYS = 0x12,
+       FECFG_SPEED = 0x21, FECFG_SVOL = 0x22, FECFG_CDVOL = 0x23 };
 
 /* trigger record (0x18 bytes in the original) */
 typedef struct {
@@ -98,6 +102,10 @@ struct FeVm {
     uint8_t  cfg[FEVM_CFG];      /* config block; G20..G57 <-> cfg via fe_vm_cfg_to_g/g_to_cfg */
     int32_t  round_time[4];      /* DAT_004a6fe0 */
     FeVmSysFn sys; void *sys_user;
+    /* transforms (rot, pos, scale: fields 0x30..0x50) before the last tick, for drawing between
+     * ticks (fe_vm_scene_lerp); has_prev = 0 for actors spawned in the last tick */
+    int32_t  prev[FEVM_MAX_ACTORS][9];
+    uint8_t  has_prev[FEVM_MAX_ACTORS];
     int      debug;              /* 1: print debug strings and errors to stderr */
     int      errors;             /* count of script errors (bad ops, stack, pool full ...) */
 };
@@ -109,6 +117,9 @@ void fe_vm_restart(FeVm *vm, int entry);
 void fe_vm_seed(FeVm *vm, uint32_t seed);
 void fe_vm_tick(FeVm *vm);
 void fe_vm_scene(const FeVm *vm, FeScene *sc);
+/* the scene at t (0..1) between the state before the last tick and now: the scripts run at
+ * 15 Hz, the port draws every frame. Moves too big for one tick (jumps) are not smoothed. */
+void fe_vm_scene_lerp(const FeVm *vm, FeScene *sc, float t);
 
 /* port input bits (fight.h IN_*) of player 0/1; menu directions are screen directions:
  * IN_FWD = right, IN_BACK = left for both players */

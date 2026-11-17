@@ -51,7 +51,10 @@ csak a stáblistához és üzenetekhez), `shade.tab` (8 bites árnyalótábla).
 - **Oldalsó kamerák:** párhuzamos vetítés, hither 0,2, yon 20, szélesség 0,40, magasság 0,378, a saját világukban
   (±0,19; 0; 0)-ban. A panelek: bal x 30–143, jobb x 496–609, y 17–458.
 - **Fények:** világonként egy irányított fény (Y körül 45°, majd még 45°).
-- **Rajzolás:** az eredeti Z-rendezéssel rajzol, mélységpuffer nélkül; a portban mélységpuffer elég.
+- **Rajzolás:** az eredeti Z-rendezéssel rajzol, mélységpuffer nélkül; a portban mélységpuffer elég. A textúrák
+  0-s palettaindexe átlátszó (a dobozok elő- és hátlapja ~82%-ban, a portrék `EMPTY` kerete 91%-ban az), a lapok
+  egyoldalúak (a hátsó lapokat a BRender nem rajzolja). Mindkettő kell: enélkül a dobozba beúszó portrét a keret
+  fekete belseje takarja, a hengereken pedig átlátszanak a hátsó portrék.
 - **Dobozok:** a felső doboz (0; 63; −200), az alsó (0; −81; −200), méret 167. Állapotváltáskor 2 × 90°-ot
   fordulnak („kártyafordítás”), közben kicserélik a tartalmukat. A menüelemek a doboz gyerekei.
 
@@ -83,8 +86,25 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - a 12/13-as triggertípusok nem sülnek el, ütközés nincs (egy szkript sem állít maszkot);
    - a világpozíció függvény az eredetihez hűen 1/10 szkriptegységet ad;
    - a méret tengelyenkénti (a középső doboz 256/128/128), ezért `FeNode.scale[3]`.
-5. **Összekötés:** bemenet → slotok, G20–G57 ↔ a port beállításai, 0xD7 → a port meccsindítása,
-   hangok a `frontend` bankból, gombok átállítása (E4/E5/EB).
+5. ✅ **Összekötés** (`src/main.c`, `fe_*` függvények; a 3D menü az alapértelmezés, `--menu2d` a régi):
+   - bemenet 15 Hz-en: P1 W/A/S/D + F/G (Enter, Space is), P2 nyilak + K/L, kontrollerek, Esc/Backspace;
+     a tickek közti rövid lenyomásokat a port megjegyzi; nyers billentyűk (E4) DirectInput-kóddal (`di_scan`);
+   - hangok a `frontend` bankból (0. bank; a `#` jelű bemondások sorban, egymás után, lásd `docs/FORMATS.md`),
+     zene: E9 → 14. sáv, EA/START_GAME → leáll;
+   - a szkriptek az eredeti 15 Hz-en futnak, de a port minden képkockát rajzol: a VM megőrzi az előző tick helyzeteit,
+     és a rajz a két tick között interpolál (`fe_vm_scene_lerp`; tickenként 120°-nál nagyobb fordulás vagy 0,4
+     egységnél nagyobb ugrás nem simul). A rajz így legfeljebb egy tickkel (67 ms) késik;
+   - beállítások: a port `options.cfg`-je ↔ a konfigurációs blokk (nehézség = `0x4a587c`, menetidő 30/60/90/végtelen,
+     győzelmek 1–3 ↔ 1/3/5 menet, hangerő 1–8 ↔ 0–10, elcsúszás nélkül). Mint az eredetiben, a SAVE (D9/DD) ment,
+     a LOAD (D8) tölt, a hangerő-csúszkák (DF/E0) élőben hatnak; meccsindításkor a G → cfg átírás mentés nélkül is érvényes;
+   - START_GAME: 0 bemutató (gép–gép, egy menet, bármely gomb megszakítja), 1 létra (a port létratáblájával),
+     2 kétjátékos (a VM karaktereivel és arénájával), 6 kilépés, 7/8/9 a menü újraindítása, 5 (hálózat) nem érhető el;
+   - a meccs után (vereség, létra vége, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0).
+   Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
+   LOADING-képernyővel), bemutató, kilépés, SAVE. Hátra van: a menüben átállított gombok használata harcban (a
+   gombok sorrendje a harci bemenetben még nincs visszafejtve), hendikep, állóképesség (3) és torna (4) – most 1P-létra –,
+   rekordtábla (DE), játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 
 Kockázatok: a 8 bites paletta és a `shade.tab` árnyalás csak közelíthető; a 0xBD/0xBE és a D8–E0, E8–ED

@@ -14,7 +14,9 @@
 
 static GLuint g_tex[FE_MAX_MAPS], g_back;
 
-static GLuint upload(const Pixmap *pm, const Rgb *pal)
+/* key0: palette index 0 is transparent, as in BRender's texture mapping (the box fronts, the
+ * portrait frames and many item maps are mostly index 0: the scene behind shows through) */
+static GLuint upload(const Pixmap *pm, const Rgb *pal, int key0)
 {
     int w = pm->width, h = pm->height;
     uint8_t *rgba = malloc((size_t)w * h * 4);
@@ -23,7 +25,7 @@ static GLuint upload(const Pixmap *pm, const Rgb *pal)
             uint8_t v = pm->pixels[y * pm->row_bytes + x];
             Rgb c = pal[v];
             uint8_t *o = rgba + ((size_t)y * w + x) * 4;
-            o[0] = c.r; o[1] = c.g; o[2] = c.b; o[3] = 255;
+            o[0] = c.r; o[1] = c.g; o[2] = c.b; o[3] = key0 && v == 0 ? 0 : 255;
         }
     GLuint t;
     glGenTextures(1, &t);
@@ -41,8 +43,8 @@ static GLuint upload(const Pixmap *pm, const Rgb *pal)
 void fe_gl_init(const FeAssets *fe)
 {
     /* every map is drawn with the screen palette, as on the original 8-bit screen */
-    for (int i = 0; i < fe->nmaps; i++) g_tex[i] = fe->maps[i].pixels ? upload(&fe->maps[i], fe->pal) : 0;
-    g_back = fe->back.pixels ? upload(&fe->back, fe->pal) : 0;
+    for (int i = 0; i < fe->nmaps; i++) g_tex[i] = fe->maps[i].pixels ? upload(&fe->maps[i], fe->pal, 1) : 0;
+    g_back = fe->back.pixels ? upload(&fe->back, fe->pal, 0) : 0;
 }
 
 void fe_gl_free(void)
@@ -119,10 +121,13 @@ static void draw_model(const FeAssets *fe, const Model *m)
         int tex = mi >= 0 && fe->mat_map[mi] >= 0 && m->uvs ? fe->mat_map[mi] : -1;
         if (tex >= 0 && g_tex[tex]) {
             glEnable(GL_TEXTURE_2D);
+            glEnable(GL_ALPHA_TEST);
+            glAlphaFunc(GL_GREATER, 0.5f);
             glBindTexture(GL_TEXTURE_2D, g_tex[tex]);
             glColor3f(1, 1, 1);
         } else {
             glDisable(GL_TEXTURE_2D);
+            glDisable(GL_ALPHA_TEST);
             if (mi >= 0) glColor3ub(fe->mats[mi].r, fe->mats[mi].g, fe->mats[mi].b);
             else glColor3f(0.6f, 0.6f, 0.6f);
         }
@@ -138,6 +143,7 @@ static void draw_model(const FeAssets *fe, const Model *m)
         glEnd();
     }
     glDisable(GL_TEXTURE_2D);
+    glDisable(GL_ALPHA_TEST);
 }
 
 static void draw_world(const FeAssets *fe, const FeScene *sc, int world)
@@ -150,6 +156,8 @@ static void draw_world(const FeAssets *fe, const FeScene *sc, int world)
     glLightfv(GL_LIGHT0, GL_POSITION, lp);
     glLightfv(GL_LIGHT0, GL_AMBIENT, amb);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, dif);
+    glEnable(GL_CULL_FACE);              /* one-sided faces, as BRender draws them: the back of the */
+    glCullFace(GL_BACK);                 /* drums and boxes stays hidden behind the see-through maps */
     for (int i = 0; i < sc->count; i++) {
         const FeNode *n = &sc->n[i];
         if (n->world != world || n->hidden) continue;
@@ -163,6 +171,7 @@ static void draw_world(const FeAssets *fe, const FeScene *sc, int world)
         draw_model(fe, m);
         glPopMatrix();
     }
+    glDisable(GL_CULL_FACE);
     glDisable(GL_LIGHTING);
 }
 

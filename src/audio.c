@@ -76,6 +76,7 @@ static Sample g_samples[MAX_SAMPLES];
 static int    g_nsamples;
 static int    g_bank[4][MAX_BANK];      /* sample index, -1 = none; entry 0 = bank index 1 */
 static int    g_bank_n[4];
+static uint8_t g_bank_speech[4][MAX_BANK];  /* '*' / '#' entries: speech (see sfx_play) */
 static const Pac *g_pac;
 
 static int sample_get(const char *name)
@@ -97,7 +98,7 @@ static int sample_get(const char *name)
 int sfx_bank_load(int bank, const char *name)
 {
     if (bank < 0 || bank > 3 || !g_pac) return 0;
-    for (int i = 0; i < MAX_BANK; i++) g_bank[bank][i] = -1;
+    for (int i = 0; i < MAX_BANK; i++) { g_bank[bank][i] = -1; g_bank_speech[bank][i] = 0; }
     g_bank_n[bank] = 0;
     char path[64], lname[32];
     size_t k = 0;
@@ -115,7 +116,10 @@ int sfx_bank_load(int bank, const char *name)
         if (!*line) continue;
         if (!strcmp(line, "end")) break;
         if (strchr(line, ';')) continue;                  /* comment */
-        while (*line == '*' || *line == '+' || *line == '#') line++;   /* playback-mode prefixes */
+        /* playback modes (FUN_0043509b, entry +0x10): none 0, '*' 1 and '#' 3 = speech, streamed on one
+         * channel and queued; '+' 2 = short sound through a ring of small buffers (plays like 0 here) */
+        if (*line == '*' || *line == '#') g_bank_speech[bank][n] = 1;
+        while (*line == '*' || *line == '+' || *line == '#') line++;
         for (char *c = line; *c; c++) *c = (char)tolower((unsigned char)*c);
         for (size_t e = strlen(line); e > 0 && (line[e - 1] == ' ' || line[e - 1] == '\t'); e--) line[e - 1] = 0;   /* names are space padded */
         g_bank[bank][n++] = strcmp(line, "null") ? sample_get(line) : -1;
@@ -128,10 +132,21 @@ int sfx_bank_load(int bank, const char *name)
 /* ------------------------------------------------------------------ */
 /*  Mixer                                                              */
 /* ------------------------------------------------------------------ */
-#define VOICES 24
-typedef struct { const Sample *s; uint64_t pos; uint32_t step; int vol; unsigned age; } Voice;   /* pos: 48.16, samples can be > 65536 frames */
-static Voice g_voice[VOICES];
 static unsigned g_age;
+#define VOICES 24
+#define SPEECH VOICES                    /* the last voice: the speech channel */
+#define SPEECH_Q 10
+typedef struct { const Sample *s; uint64_t pos; uint32_t step; int vol; unsigned age; } Voice;   /* pos: 48.16, samples can be > 65536 frames */
+static Voice g_voice[VOICES + 1];
+static int   g_speech_q[SPEECH_Q], g_speech_head, g_speech_n;   /* FUN_0041142a: 10 entry ring */
+
+static void voice_start(Voice *vc, const Sample *s)
+{
+    vc->s = s;
+    vc->pos = 0;
+    vc->step = (uint32_t)(((uint64_t)s->rate << 16) / 44100);
+    vc->age = ++g_age;
+}
 static SDL_AudioDeviceID g_dev;
 static drmp3 g_mp3;
 static int   g_mopen, g_track = -1, g_music_on = 1, g_sfx_on = 1;
@@ -164,13 +179,22 @@ static void SDLCALL audio_cb(void *ud, Uint8 *stream, int len)
     /* sound effects (mono -> both channels, linear resampling) */
     if (g_sfx_on) {
         int sv = (int)(g_svol * 256);
-        for (int v = 0; v < VOICES; v++) {
+        for (int v = 0; v <= VOICES; v++) {
             Voice *vc = &g_voice[v];
             if (!vc->s) continue;
             const Sample *s = vc->s;
             for (int i = 0; i < frames; i++) {
                 uint64_t ip = vc->pos >> 16;
-                if (ip + 1 >= (uint64_t)s->n) { vc->s = NULL; break; }
+                if (ip + 1 >= (uint64_t)s->n) {
+                    vc->s = NULL;
+                    if (v == SPEECH && g_speech_n > 0) {          /* next queued line */
+                        voice_start(vc, &g_samples[g_speech_q[g_speech_head]]);
+                        g_speech_head = (g_speech_head + 1) % SPEECH_Q; g_speech_n--;
+                        s = vc->s;
+                        continue;
+                    }
+                    break;
+                }
                 int32_t a = s->pcm[ip], b = s->pcm[ip + 1], fr = (int32_t)(vc->pos & 0xffff);
                 int32_t x = a + (((b - a) * fr) >> 16);
                 x = (x * sv) >> 8;
@@ -192,16 +216,18 @@ void sfx_play(int bank, int index)
     int si = g_bank[bank][index - 1];
     if (si < 0) return;
     SDL_LockAudioDevice(g_dev);
+    if (g_bank_speech[bank][index - 1]) {                 /* speech: one at a time, the rest waits */
+        if (!g_voice[SPEECH].s) voice_start(&g_voice[SPEECH], &g_samples[si]);
+        else if (g_speech_n < SPEECH_Q) { g_speech_q[(g_speech_head + g_speech_n) % SPEECH_Q] = si; g_speech_n++; }
+        SDL_UnlockAudioDevice(g_dev);
+        return;
+    }
     int best = 0;
     for (int v = 0; v < VOICES; v++) {
         if (!g_voice[v].s) { best = v; break; }
         if (g_voice[v].age < g_voice[best].age) best = v;   /* steal the oldest */
     }
-    Voice *vc = &g_voice[best];
-    vc->s = &g_samples[si];
-    vc->pos = 0;
-    vc->step = (uint32_t)(((uint64_t)g_samples[si].rate << 16) / 44100);
-    vc->age = ++g_age;
+    voice_start(&g_voice[best], &g_samples[si]);
     SDL_UnlockAudioDevice(g_dev);
 }
 
