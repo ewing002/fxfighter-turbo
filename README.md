@@ -35,6 +35,8 @@ a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi t�
 Elveszett 1 játékos meccs és minden 2 játékos meccs után az eredeti CONTINUE képernyő jön (10 mp): ütés vagy rúgás = folytatás
 (1P: új harcos, a létra ugyanott folytatódik; 2P: harcosválasztó), más gomb gyorsítja, lejáratkor vissza a főmenübe.
 `quick_continue=1` (az OPTIONS QUICK CONTINUE pontja) mellett az ütés azonnali visszavágót indít.
+Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a második kontroller Start gombja) megszakítja a meccset,
+és a 2 játékos harcosválasztó jön (a port bővítése; `challenger=0` kikapcsolja).
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
 Még hiányzik: nincs hálózati játék; a padló két részletességi beállítása nem hat (a harcosoké igen).
@@ -50,6 +52,7 @@ A többi csak az `options.cfg`-ben: `fullscreen` (0/1, F11-gyel vagy Alt+Enterre
 viheti ki; 2 játékos módban az ellenfél teste sem tolhatja ki. 0 = az eredeti viselkedés, ahol a peremen túl is el lehet lépni.
 `input_buffer` (alapból 4, 0–12 tick): az ütés- és rúgásgomb lenyomása ennyi tickig érvényes marad, amíg egy mozdulat fel nem használja;
 így egy mozdulat végére eső nyomás sem vész el (az eredetiben elveszett). 0 = az eredeti viselkedés. Csak az emberi játékosra hat.
+`challenger` (alapból 1): a kihívó becsatlakozhat egy futó egyjátékos meccsbe (lásd fent); 0 = kikapcsolva.
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A rekordtábla ugyanitt van (`hiscores.dat`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
 **Harc** (alapkiosztás)

@@ -164,7 +164,14 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      (G67 = a létra helye): új harcos választása, és a létra ugyanott folytatódik (op ED / `0x41a7e0`: ha az új harcos még
      hátravan, a régi kerül a helyére; az összidő megmarad), 2 → ugyanaz a meccs újra. 2P: 0 → főmenü, 1 → 2P választó
      (a bajnok és a sorozata megmarad), 2 → visszavágó. A kupa sorozata (`0x40179e`: 0x4a1d68 / 0x4a1d6c) új 2P
-     menetnél nullázódik. Nincs a portban: a hálózati változatok (pncont, pnwcont) és a kihívó becsatlakozása;
+     menetnél nullázódik. Nincs a portban: a hálózati változatok (pncont, pnwcont);
+   - a kihívó becsatlakozása: az eredetiben félbehagyott, halott kód. A létra a 12-es meccseredményt 12-es státusszá
+     alakítja (`0x41afe4`), a `ProcessWrapperReturns` erre csak naplóz („OTHER Player joining in on 1P game : GOTO 2P
+     selection”, `0x413f69`), a belépési módot nem állítja (főmenü lenne). A meccsfüggvény (`0x44506d`) viszont soha nem
+     ad 12-t: az eredménye 2/3, −1, 0, 1 vagy −2. A port bővítésként a szándékolt működést adja: egyjátékos létra
+     közben a 2. játékos ütés gombja (vagy a második kontroller Start gombja) megszakítja a meccset, a létra véget ér,
+     és a 4-es belépési mód (2P választó) jön, új 2P menettel (`challenger_join`, `src/main.c`; `options.cfg`:
+     `challenger`, alapból 1). Teszt: `FX_CHALLENGE=<mp>` a létra ennyi harcideje után becsatlakoztatja a kihívót;
    - rekordtábla (`0x4a7b40`, `fight/hiscores.dat`): 10 × 8 bájt, 3 betű, a harcos és az idő (DOS-tick, 18,2 Hz,
      16.16). A front end minden indulásakor és visszatérésekor az OPT[0..19]-be kerül (`FUN_0043b513`: OPT[i] = a
      betűk − 'A' a felső három bájtban, a harcos az alsóban; OPT[10+i] = az idő számjegyei P P M M bájtonként), az
@@ -184,7 +191,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása.
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`), a kihívó becsatlakozása (`FX_CHALLENGE`). Az 5. lépés kész.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
    `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü

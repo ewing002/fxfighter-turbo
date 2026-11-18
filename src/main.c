@@ -99,8 +99,8 @@ static double g_ladder_time;                    /* 1P ladder: fight time so far 
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7], quick_cont; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 }, 0 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7], quick_cont, challenger; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 }, 0, 1 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 /* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
  * i.e. 48, 60 and 66.7 Hz */
@@ -114,6 +114,8 @@ static int  g_last_health[2];
 static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
 static void fe_enter(void);
 static void fe_enter_entry(int entry);
+static int challenger_ok(void);
+static void challenger_join(void);
 static int32_t time_digits(int secs);
 static void hs_load(void);
 static void hs_to_opt(FeVm *vm);
@@ -863,7 +865,9 @@ static void pad_button(int slot, int button)
     case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: if (g_state != ST_FIGHT) push_key(dir[slot][3]); break;
     case SDL_CONTROLLER_BUTTON_A: case SDL_CONTROLLER_BUTTON_X: if (g_state != ST_FIGHT) push_key(ok); break;
     case SDL_CONTROLLER_BUTTON_B: if (g_state != ST_FIGHT) push_key(SDLK_BACKSPACE); break;
-    case SDL_CONTROLLER_BUTTON_START: push_key(g_state == ST_FIGHT ? SDLK_p : ok); break;
+    case SDL_CONTROLLER_BUTTON_START:
+        if (slot == 1 && challenger_ok()) { challenger_join(); break; }   /* a challenger joins the 1P game */
+        push_key(g_state == ST_FIGHT ? SDLK_p : ok); break;
     case SDL_CONTROLLER_BUTTON_BACK: push_key(SDLK_ESCAPE); break;
     default: break;
     }
@@ -926,6 +930,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "speed")) g_cfg.speed = v < 1 ? 1 : v > 3 ? 3 : v;
         else if (!strcmp(k, "ring_guard")) g_cfg.ring_guard = v != 0;
         else if (!strcmp(k, "quick_continue")) g_cfg.quick_cont = v != 0;
+        else if (!strcmp(k, "challenger")) g_cfg.challenger = v != 0;
         else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
         else if (!strncmp(k, "detail", 6) && k[6] >= '1' && k[6] <= '7' && !k[7]) g_cfg.det[k[6] - '1'] = v < 0 ? 0 : v > 2 ? 2 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
@@ -949,6 +954,7 @@ static void cfg_save(void)
     fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\nring_guard=%d\ninput_buffer=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed, g_cfg.ring_guard, g_cfg.input_buffer);
     for (int i = 0; i < 7; i++) fprintf(f, "detail%d=%d\n", i + 1, g_cfg.det[i]);
     fprintf(f, "quick_continue=%d\n", g_cfg.quick_cont);
+    fprintf(f, "challenger=%d\n", g_cfg.challenger);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -1780,8 +1786,30 @@ static void endurance_next(void)
     g_yaw_ofs = 0; camera_step(1);
 }
 
+/* port extension: a challenger joins a running 1P ladder. FIGHT.EXE has the unfinished hook for it (match result
+ * 12 -> status 12, "OTHER Player joining in on 1P game : GOTO 2P selection", 0x41afe4 / 0x413f69), but the match
+ * never returns 12. Here player 2's PUNCH key (or START on the second pad) ends the ladder and opens the 2P
+ * selection (entry 4, as after status 22) for a new 2P session. Option: challenger (options.cfg). */
+static int challenger_ok(void)
+{
+    return g_cfg.challenger && g_state == ST_FIGHT && g_fe_mode == 1 && !g_tour && !g_endu && !g_cont.on &&
+           g_fight.p[1].cpu && (!g_fight.p[0].cpu || getenv("FX_AUTOTEST")) && g_match_over_t == 0;
+}
+
+static void challenger_join(void)
+{
+    if (getenv("FX_AUTOTEST")) { printf("challenger joins: ladder %d fighter %d", g_ladder_pos, g_f[0].id); puts(""); fflush(stdout); }
+    g_lad_resume = 0; g_champ_keep = 0;             /* the ladder is over, a new 2P session starts */
+    g_vm.G[67] = 0;
+    fe_enter_entry(4);                               /* the 2P selection */
+}
+
 static void match_tick(void)
 {
+    {   /* tests: FX_CHALLENGE=<s> joins after s seconds of ladder fight time */
+        const char *e = getenv("FX_CHALLENGE");
+        if (e && challenger_ok() && g_ladder_time >= atof(e)) { challenger_join(); return; }
+    }
     if (g_fight.winner < 0 && g_fight.round_age >= g_fight.start_delay && !g_fight_paused) g_ladder_time += tick_secs();   /* 0x445989 */
     if (g_match_over_t > 0) { if (--g_match_over_t == 0) after_match(); return; }
     if (g_endu && g_fight.winner >= 0 && g_fight.over_timer <= 0) { endurance_next(); return; }
@@ -2453,6 +2481,7 @@ int main(int argc, char **argv)
                     tour_result(rand() & 1);
                     continue;
                 }
+                if (e.key.keysym.scancode == g_key_sc[1][4] && challenger_ok()) { challenger_join(); continue; }
                 if (g_state == ST_FIGHT && g_game && k != SDLK_ESCAPE && key_bound(e.key.keysym.scancode)) { tap_key(e.key.keysym.scancode); continue; }
                 if (g_state == ST_FE3D) {             /* the scripts poll the keys once per tick */
                     SDL_Scancode sc = e.key.keysym.scancode ? e.key.keysym.scancode : SDL_GetScancodeFromKey(k);
