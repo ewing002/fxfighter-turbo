@@ -39,7 +39,7 @@ Még hiányzik: nincs hálózati játék; a részletességi szintek nem hatnak a
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
 Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgás, B / Back = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
 
-**Beállítások:** a menetidő, a menetek száma, a nehézség, a hendikep, a hangerők és a gombok a 3D menü OPTIONS részében állíthatók.
+**Beállítások:** a menetidő, a menetek száma, a nehézség, a játéksebesség (48 / 60 / 66,7 képkocka/s, a menetóra valós időben jár), a hendikep, a hangerők és a gombok a 3D menü OPTIONS részében állíthatók.
 A többi csak az `options.cfg`-ben: `fullscreen` (0/1, F11-gyel vagy Alt+Enterrel is), `vsync`, `ringouts` (ringből kiesés), `rumble` (rezgés),
 `round_time=99` (az eredetiben nincs ilyen menetidő).
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A rekordtábla ugyanitt van (`hiscores.dat`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.

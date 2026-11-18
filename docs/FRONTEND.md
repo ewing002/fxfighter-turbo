@@ -126,6 +126,11 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - hendikep (2P): a START_GAME 5–6. paramétere (1–8) a konfigurációs blokk 0–1. bájtjába kerül (`0x40bce7`), és
      két ember között a támadó sebzését szorozza 0,7…1,4-gyel (a 4 semleges; lásd `docs/FORMATS.md`, sebzés). A port
      az `options.cfg`-ben tartja (`handicap1`, `handicap2`, alapból 4; az eredeti gyári értéke 3);
+   - játéksebesség (OPTIONS, G51 → `0x4a5899` = 1–3, op EC → `FUN_00433f83`): a `0x4a1cf0` tábla egy harci képkocka
+     hosszát adja PIT-tickben (24850, 19880, 17890), azaz 48, 60 és 66,7 Hz; a menetóra viszont valós időben fogy
+     (`0x445652`: záróidő − időzítő), és a létra összideje is valós idő. A port a harc ütemét és a menetórát
+     (`Fight.tick_pit`) így állítja; a beállítás az `options.cfg`-be kerül (`speed`). Az EC egy visszajelző hangot
+     is lejátszik (`0x4ab058[speed]`), ez nincs bekötve;
    - a meccs után (vereség, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
    - rekordtábla (`0x4a7b40`, `fight/hiscores.dat`): 10 × 8 bájt, 3 betű, a harcos és az idő (DOS-tick, 18,2 Hz,
      16.16). A front end minden indulásakor és visszatérésekor az OPT[0..19]-be kerül (`FUN_0043b513`: OPT[i] = a
@@ -146,7 +151,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: játéksebesség (EC), részletesség, a létra folytatása (ED, G67),
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: részletesség, a létra folytatása (ED, G67),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.

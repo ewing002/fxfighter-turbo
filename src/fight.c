@@ -989,6 +989,7 @@ void fight_set_arena(Fight *f, const FighterInfo *afi)
 void fight_reset(Fight *f)
 {
     f->round_timer = (f->round_secs > 0 ? f->round_secs : 60) * FIGHT_HZ;
+    f->clock_acc = 0;
     f->over_timer = 0;
     f->winner = -1;
     f->ko_reason = 0;
@@ -1074,9 +1075,15 @@ void fight_tick(Fight *f)
     if (f->round_age == FIGHT_HZ) emit_sound(f, 0, 19);                 /* beam-in */
     if (f->round_age == FIGHT_HZ * 22 / 10) emit_sound(f, 0, 1);       /* "FIGHT!" */
     if (f->winner < 0) {
-        if (f->round_timer > 0 && f->round_secs >= 0) f->round_timer--;
-        if (f->round_timer > 0 && f->round_timer < 6 * FIGHT_HZ && f->round_timer % FIGHT_HZ == 0)
-            emit_sound(f, 0, 17);                                      /* countdown tick */
+        /* the round clock runs in real time (0x445652: end time - timer), the fight at tick_pit;
+         * round_timer counts FIGHT_HZ steps per second */
+        if (f->round_secs >= 0) f->clock_acc += f->tick_pit > 0 ? f->tick_pit : 24850;
+        while (f->clock_acc >= 24850 && f->round_timer > 0) {
+            f->clock_acc -= 24850;
+            f->round_timer--;
+            if (f->round_timer > 0 && f->round_timer < 6 * FIGHT_HZ && f->round_timer % FIGHT_HZ == 0)
+                emit_sound(f, 0, 17);                                  /* countdown tick */
+        }
         int ko0 = f->p[0].health <= 0, ko1 = f->p[1].health <= 0;
         if (ko0 || ko1 || f->round_timer == 0) {
             if (ko0 && !ko1) f->winner = 1;

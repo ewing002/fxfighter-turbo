@@ -86,13 +86,17 @@ static int  g_debug_fight;                      /* started from the command line
 static int  g_round = 1, g_match_over_t;        /* round number, ticks left on the match result */
 static int  g_pick[2], g_arena_sel = 1;         /* the match the front end asked for */
 static int  g_ladder[16], g_nladder, g_ladder_pos;
-static int  g_ladder_ticks;                     /* 1P ladder: fight time so far (0x4c7320), FIGHT_HZ ticks */
+static double g_ladder_time;                    /* 1P ladder: fight time so far in seconds (0x4c7320, real time) */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2]; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 } };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
+/* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
+ * i.e. 48, 60 and 66.7 Hz */
+static int speed_pit(int sp) { return sp >= 3 ? 17890 : sp == 2 ? 19880 : 24850; }
+static double tick_secs(void) { return (double)speed_pit(g_cfg.speed) / 1193182.0; }
 static SDL_Window *g_win;
 static int  g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
@@ -862,6 +866,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "ringouts")) g_cfg.ringouts = v != 0;
         else if (!strcmp(k, "rumble")) g_cfg.rumble = v != 0;
         else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
+        else if (!strcmp(k, "speed")) g_cfg.speed = v < 1 ? 1 : v > 3 ? 3 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
             g_cfg.hc[k[8] - '1'] = v < 1 ? 0 : v > 8 ? 7 : v - 1;
         else if (!strncmp(k, "key", 3)) {                 /* key1..key12: DirectInput scan codes */
@@ -880,7 +885,7 @@ static void cfg_save(void)
     fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\ndifficulty=%d\n",
             g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
             g_cfg.difficulty);
-    fprintf(f, "handicap1=%d\nhandicap2=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1);
+    fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -897,6 +902,7 @@ static void cfg_apply(void)
     g_ringouts = g_cfg.ringouts;
     g_fight.ai_level = g_cfg.difficulty;
     g_fight.handicap[0] = g_cfg.hc[0]; g_fight.handicap[1] = g_cfg.hc[1];
+    g_fight.tick_pit = speed_pit(g_cfg.speed);
     keys_apply();
 }
 
@@ -1178,7 +1184,7 @@ static void build_ladder(int player)
         for (int i = g_nladder - 1; i > 0; i--) { int j = rand() % (i + 1), t = g_ladder[i]; g_ladder[i] = g_ladder[j]; g_ladder[j] = t; }
     }
     g_ladder_pos = 0;
-    g_ladder_ticks = 0;
+    g_ladder_time = 0;
 }
 
 static int vs_opponent(void) { return g_two_players ? g_pick[1] : g_ladder[g_ladder_pos]; }
@@ -1200,7 +1206,7 @@ static void after_match(void)
     if (g_tour) { tour_result(g_fight.winner); return; }
     if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
     if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
-        int secs = g_ladder_ticks / FIGHT_HZ;
+        int secs = (int)g_ladder_time;
         if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
         g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
         g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
@@ -1234,7 +1240,7 @@ static void endurance_next(void)
 
 static void match_tick(void)
 {
-    if (g_fight.winner < 0 && g_fight.round_age >= g_fight.start_delay && !g_fight_paused) g_ladder_ticks++;   /* 0x445989 */
+    if (g_fight.winner < 0 && g_fight.round_age >= g_fight.start_delay && !g_fight_paused) g_ladder_time += tick_secs();   /* 0x445989 */
     if (g_match_over_t > 0) { if (--g_match_over_t == 0) after_match(); return; }
     if (g_endu && g_fight.winner >= 0 && g_fight.over_timer <= 0) { endurance_next(); return; }
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
@@ -1384,6 +1390,7 @@ static void port_to_fecfg(void)
     uint8_t *c = g_vm.cfg;
     c[FECFG_DIFF] = (uint8_t)g_cfg.difficulty;
     c[FECFG_HC] = (uint8_t)g_cfg.hc[0]; c[FECFG_HC + 1] = (uint8_t)g_cfg.hc[1];
+    c[FECFG_SPEED] = (uint8_t)g_cfg.speed;
     int rt = g_cfg.round_secs > 90 ? 90 : g_cfg.round_secs;          /* 99 s: not in the original */
     c[FECFG_RTIME] = (uint8_t)(rt & 0xff); c[FECFG_RTIME + 1] = (uint8_t)((rt >> 8) & 0xff);
     c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
@@ -1397,6 +1404,7 @@ static void fecfg_to_port(void)
     const uint8_t *c = g_vm.cfg;
     g_cfg.difficulty = c[FECFG_DIFF] > 7 ? 7 : c[FECFG_DIFF];
     for (int i = 0; i < 2; i++) g_cfg.hc[i] = c[FECFG_HC + i] > 7 ? 3 : c[FECFG_HC + i];
+    g_cfg.speed = c[FECFG_SPEED] < 1 ? 1 : c[FECFG_SPEED] > 3 ? 3 : c[FECFG_SPEED];
     int rt = (int16_t)(c[FECFG_RTIME] | c[FECFG_RTIME + 1] << 8);
     g_cfg.round_secs = rt < 0 ? -1 : (rt == 30 || rt == 90) ? rt : 60;
     int r = c[FECFG_ROUNDS];
@@ -1482,6 +1490,8 @@ static void fe_sys(FeVm *vm, int op, void *user)
     case 0xdf: g_cfg.sfx = vol_sync(g_cfg.sfx, vm->cfg[FECFG_SVOL]); sfx_set_volume((float)g_cfg.sfx / 10.0f); break;
     case 0xe0: g_cfg.music = vol_sync(g_cfg.music, vm->cfg[FECFG_CDVOL]); music_set_volume((float)g_cfg.music / 10.0f); break;
     case 0xde: opt_to_hs(vm); hs_save(); break;                                      /* high scores */
+    case 0xec: g_cfg.speed = vm->cfg[FECFG_SPEED] < 1 ? 1 : vm->cfg[FECFG_SPEED] > 3 ? 3 : vm->cfg[FECFG_SPEED];
+               g_fight.tick_pit = speed_pit(g_cfg.speed); break;                     /* game speed (0x40bee3) */
     default: break;
     }
 }
@@ -1962,7 +1972,7 @@ int main(int argc, char **argv)
             if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
         } else if (g_game) {
             if (g_fight_paused) acc = 0;
-            while (acc >= 1.0 / FIGHT_HZ && g_state == ST_FIGHT) {
+            while (acc >= tick_secs() && g_state == ST_FIGHT) {
                 read_input();
                 fight_tick(&g_fight);
                 pad_rumble_hits();
@@ -1970,7 +1980,7 @@ int main(int argc, char **argv)
                 g_fight.nsnd = 0;
                 match_tick();
                 camera_step(0);
-                acc -= 1.0 / FIGHT_HZ;
+                acc -= tick_secs();
             }
             if (++title_cnt % 15 == 0) update_title(win);
             update_camera((float)dt, 0);
