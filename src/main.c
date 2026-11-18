@@ -705,7 +705,7 @@ static void draw_hud(int w, int h)
         float x = i ? 380.f : 16.f, y = 18.f;
         ui_draw_part(pan, 0, 122, x, y, 2, 1);
         float hp = (float)(p->health < 0 ? 0 : p->health) / (float)MAX_HEALTH;
-        float ix0 = x + 6, ix1 = x + 236, cut = (ix1 - ix0) * (1.f - hp);
+        float ix0 = x + 6, ix1 = x + 238, cut = (ix1 - ix0) * (1.f - hp);
         if (cut > 0) {           /* the bar drains towards the outer edge */
             if (i == 0) ui_rect(ix0, y + 6, ix0 + cut, y + 20, 0.08f, 0.0f, 0.02f, 1);
             else        ui_rect(ix1 - cut, y + 6, ix1, y + 20, 0.08f, 0.0f, 0.02f, 1);

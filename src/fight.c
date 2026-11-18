@@ -827,6 +827,9 @@ static float lowest_joint(const Fight *f, int i)
             float M[4][3]; ani_bone_matrix(fr, b, M);
             for (int k = 0; k < m->nverts; k++) {
                 const Vec3 *v = &m->verts[k];
+                /* the pelvis part also carries Venam's tail and Sheba's loincloth (up to 0.5 out): lying
+                 * down they would hold the body above the floor; the original only aligns the feet */
+                if (b == 7 && (v->y < -0.15f || v->z < -0.16f)) continue;   /* other pelvises: y, z >= -0.14 */
                 float z = v->x * M[0][2] + v->y * M[1][2] + v->z * M[2][2] + M[3][2];
                 if (z < mn) mn = z;
             }
