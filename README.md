@@ -31,6 +31,9 @@ menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek szá
 A menükhöz kell a `FIGHT.EXE`; ha hiányzik, a program hibaüzenettel kilép (menü nélküli harc: `--p1 N --p2 N`, lásd lent).
 A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítani (ATTACK = előre, RETREAT = hátra a kezdőoldalról nézve);
 a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
+Elveszett 1 játékos meccs és minden 2 játékos meccs után az eredeti CONTINUE képernyő jön (10 mp): ütés vagy rúgás = folytatás
+(1P: új harcos, a létra ugyanott folytatódik; 2P: harcosválasztó), más gomb gyorsítja, lejáratkor vissza a főmenübe.
+`quick_continue=1` (az OPTIONS QUICK CONTINUE pontja) mellett az ütés azonnali visszavágót indít.
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
 Még hiányzik: nincs hálózati játék; a padló két részletességi beállítása nem hat (a harcosoké igen).

@@ -86,12 +86,17 @@ static int  g_debug_fight;                      /* started from the command line
 static int  g_round = 1, g_match_over_t;        /* round number, ticks left on the match result */
 static int  g_pick[2], g_arena_sel = 1;         /* the match the front end asked for */
 static int  g_ladder[16], g_nladder, g_ladder_pos;
+/* continue screen (continue.c, 0x4368c0): after a lost 1P match and after every 2P match */
+static struct { int on, side, phase, n_last; float x, v; double left; unsigned prev; } g_cont;
+static int  g_champ_side = -1, g_champ_streak, g_champ_keep;   /* 2P champion (0x4a1d68 / 0x4a1d6c) */
+static int  g_lad_resume, g_lad_old;            /* 1P continue: keep the ladder (status 20, op ED) */
+static void cont_draw(int w, int h);
 static double g_ladder_time;                    /* 1P ladder: fight time so far in seconds (0x4c7320, real time) */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7]; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 } };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7], quick_cont; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 }, 0 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 /* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
  * i.e. 48, 60 and 66.7 Hz */
@@ -645,6 +650,7 @@ static void render(int w, int h)
     g_draw_mode = DM_TEX;
     glDisable(GL_LIGHTING);
     if (g_game) draw_hud(w, h);
+    if (g_cont.on) cont_draw(w, h);
 }
 
 static void update_title(SDL_Window *win)
@@ -913,6 +919,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
         else if (!strcmp(k, "speed")) g_cfg.speed = v < 1 ? 1 : v > 3 ? 3 : v;
         else if (!strcmp(k, "ring_guard")) g_cfg.ring_guard = v != 0;
+        else if (!strcmp(k, "quick_continue")) g_cfg.quick_cont = v != 0;
         else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
         else if (!strncmp(k, "detail", 6) && k[6] >= '1' && k[6] <= '7' && !k[7]) g_cfg.det[k[6] - '1'] = v < 0 ? 0 : v > 2 ? 2 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
@@ -935,6 +942,7 @@ static void cfg_save(void)
             g_cfg.difficulty);
     fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\nring_guard=%d\ninput_buffer=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed, g_cfg.ring_guard, g_cfg.input_buffer);
     for (int i = 0; i < 7; i++) fprintf(f, "detail%d=%d\n", i + 1, g_cfg.det[i]);
+    fprintf(f, "quick_continue=%d\n", g_cfg.quick_cont);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -1246,6 +1254,96 @@ static void start_vs_fight(void)
     else { int o = vs_opponent(); begin_match(g_pick[0], o, o <= 11 ? o : 0, 0, 1); }
 }
 
+/* ---- continue screen (continue.c, 0x4368c0, docs/FRONTEND.md) ----
+ * The steel doors close in (x += v, v += 1.2 per frame), then the banner "PLAYER n CONTINUE", in 2P
+ * the champion's cup with his winning streak, and a countdown 10..0 (real time, 10.98 s). Only the
+ * loser's input counts: punch or kick continue (punch = rematch with QUICK CONTINUE), any other
+ * press takes 0.25 s off. Results: 0 (timeout) / 1 (continue via the select screen) / 2 (rematch). */
+static void cont_start(int side)
+{
+    memset(&g_cont, 0, sizeof g_cont);
+    g_cont.on = 1; g_cont.side = side; g_cont.v = 1.0f; g_cont.n_last = -1;
+    g_cont.prev = g_fight.p[side].in;
+    sfx_bank_load(0, "continue");                    /* bank slot 0 during the screen */
+    g_bank0_front = 0;
+    sfx_play(0, 1);                                  /* doorslde */
+    if (getenv("FX_AUTOTEST")) { printf("continue: side %d", side); puts(""); fflush(stdout); }
+}
+
+static void cont_finish(int r)
+{
+    g_cont.on = 0;
+    music_set_volume((float)g_cfg.music / 10.0f);
+    if (getenv("FX_AUTOTEST")) { printf("continue: result %d", r); puts(""); fflush(stdout); }
+    if (g_fe_mode == 1) {                            /* 0x41aec7: 0 game over, 1 status 20, 2 same fight */
+        if (r == 2) { start_vs_fight(); return; }
+        if (r == 1) {
+            g_lad_resume = 1; g_lad_old = g_f[0].id;
+            g_vm.G[67] = (g_ladder_pos + 1) << 16;   /* 0x413ffc: the place on the ladder */
+            fe_enter_entry(3);                       /* pick a fighter, then the ladder goes on */
+            return;
+        }
+        fe_enter();
+        return;
+    }
+    if (r == 2) { start_vs_fight(); return; }        /* 2P (0x40413a): rematch */
+    if (r == 1) { g_champ_keep = 1; fe_enter_entry(4); return; }   /* status 22: 2P select */
+    fe_enter();                                      /* status -1: main menu */
+}
+
+static void cont_tick(void)
+{
+    if (g_cont.phase == 0) {                         /* doors closing (0x436d91) */
+        g_cont.x += g_cont.v; g_cont.v += 1.2f;
+        if (g_cont.x > 160.f) {
+            g_cont.x = 160.f; g_cont.phase = 1;
+            g_cont.left = 10.98;                     /* 0xC7E58A timer units */
+            sfx_play(0, 2); sfx_play(0, 5);          /* doorshut, "Continue?" */
+            music_set_volume((float)g_cfg.music / 20.0f);   /* 0x40113b(-3): music down */
+        }
+        return;
+    }
+    g_cont.left -= tick_secs();
+    if (g_cont.left < 0) { cont_finish(0); return; }
+    int n = (int)g_cont.left; if (n > 10) n = 10;
+    if (n != g_cont.n_last) { g_cont.n_last = n; sfx_play(0, (n & 1) ? 4 : 3); }   /* tick2 / tick1 */
+    read_input();
+    unsigned in = g_fight.p[g_cont.side].in, press = in & ~g_cont.prev;
+    g_cont.prev = in;
+    if (press & IN_PUNCH) cont_finish(g_cfg.quick_cont ? 2 : 1);
+    else if (press & IN_KICK) cont_finish(1);
+    else if (press) g_cont.left -= 0.25;             /* 0x48CCC */
+}
+
+static void cont_draw(int w, int h)
+{
+    ui_begin(w, h);
+    int x = (int)g_cont.x;
+    const Sprite *dl = ui_bout("doorl"), *dr = ui_bout("doorr");
+    if (x > 0) {                                     /* 320x240 screen drawn at 2x */
+        ui_draw_part(dl, 160 - x, 160, 0, 0, 2, 1);
+        ui_draw_part(dr, 0, x, (float)(320 - x) * 2, 0, 2, 1);
+    }
+    if (g_cont.phase == 1) {
+        ui_draw(ui_bout(g_cont.side ? "p2cont" : "p1cont"), 64 * 2, 51 * 2, 2, 1);
+        const Sprite *ch = ui_bout("champ"), *tm = ui_bout("timer"), *rn = ui_bout("rndnumbr");
+        int x0, x1;
+        if (g_fe_mode == 2 && g_champ_side >= 0 && ch) {   /* the champion's cup under his half */
+            float cx = g_champ_side ? 200.f : 40.f, cy = 184.f;
+            ui_draw(ch, cx * 2, cy * 2, 2, 1);
+            int st = g_champ_streak > 99 ? 99 : g_champ_streak;
+            if (tm && ui_timer_digit_x(st / 10, &x0, &x1)) ui_draw_part(tm, x0, x1, (cx + 33) * 2, (cy + 6) * 2, 2, 1);
+            if (tm && ui_timer_digit_x(st % 10, &x0, &x1)) ui_draw_part(tm, x0, x1, (cx + 56) * 2, (cy + 6) * 2, 2, 1);
+        }
+        int n = g_cont.n_last < 0 ? 10 : g_cont.n_last;
+        float dx = 134.f;
+        int dg[2] = { n / 10, n % 10 };
+        for (int k = 0; k < 2 && rn; k++)
+            if (ui_round_digit_x(dg[k], &x0, &x1)) { ui_draw_part(rn, x0, x1, dx * 2, 151 * 2, 2, 1); dx += (float)(x1 - x0) + 1; }
+    }
+    ui_end();
+}
+
 static void after_match(void)
 {
     if (g_debug_fight) {                            /* command line fight: keep going */
@@ -1263,7 +1361,14 @@ static void after_match(void)
     }
     g_endu = 0;
     if (g_tour) { tour_result(g_fight.winner); return; }
-    if (g_fe_mode == 2) { fe_enter_entry(4); return; }   /* 2P: back to the 2P select (status 22, 0x414027) */
+    if (g_fe_mode == 2) {                            /* 2P: champion streak (0x40179e), then the continue screen */
+        int w = g_fight.winner, l = w ^ 1;
+        if (w == g_champ_side) g_champ_streak++; else { g_champ_side = w; g_champ_streak = 1; }
+        if (w >= 0 && !g_fight.p[l].cpu) { cont_start(l); return; }
+        g_champ_keep = 1; fe_enter_entry(4);         /* no human loser (tests): straight to the 2P select */
+        return;
+    }
+    if (g_fe_mode == 1 && g_fight.winner == 1 && !g_fight.p[0].cpu) { cont_start(0); return; }   /* 1P lost */
     if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
     if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
         int secs = (int)g_ladder_time;
@@ -1452,6 +1557,7 @@ static void port_to_fecfg(void)
     c[FECFG_HC] = (uint8_t)g_cfg.hc[0]; c[FECFG_HC + 1] = (uint8_t)g_cfg.hc[1];
     c[FECFG_SPEED] = (uint8_t)g_cfg.speed;
     for (int i = 0; i < 7; i++) c[FECFG_DET + i] = (uint8_t)g_cfg.det[i];
+    c[0x26] = (uint8_t)(g_cfg.quick_cont != 0);   /* QUICK CONTINUE (kwikcon, G55) */
     int rt = g_cfg.round_secs > 90 ? 90 : g_cfg.round_secs;          /* 99 s: not in the original */
     c[FECFG_RTIME] = (uint8_t)(rt & 0xff); c[FECFG_RTIME + 1] = (uint8_t)((rt >> 8) & 0xff);
     c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
@@ -1467,6 +1573,7 @@ static void fecfg_to_port(void)
     for (int i = 0; i < 2; i++) g_cfg.hc[i] = c[FECFG_HC + i] > 7 ? 3 : c[FECFG_HC + i];
     g_cfg.speed = c[FECFG_SPEED] < 1 ? 1 : c[FECFG_SPEED] > 3 ? 3 : c[FECFG_SPEED];
     for (int i = 0; i < 7; i++) g_cfg.det[i] = c[FECFG_DET + i] > 2 ? 1 : c[FECFG_DET + i];
+    g_cfg.quick_cont = c[0x26] != 0;
     int rt = (int16_t)(c[FECFG_RTIME] | c[FECFG_RTIME + 1] << 8);
     g_cfg.round_secs = rt < 0 ? -1 : (rt == 30 || rt == 90) ? rt : 60;
     int r = c[FECFG_ROUNDS];
@@ -1579,6 +1686,7 @@ static void fe_enter_entry(int entry)
 {
     g_fe_mode = -1; g_endu = 0; g_tour = g_tour_vs = 0; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
     port_to_fecfg();
+    if (g_cont.on) { g_cont.on = 0; music_set_volume((float)g_cfg.music / 10.0f); }
     hs_to_opt(&g_vm);                            /* 0x413cf9: on every return */
     if (getenv("FX_AUTOTEST")) { printf("fe3d entry %d G59 %x G60 %x G61 %x G62 %x", entry, (unsigned)g_vm.G[59], (unsigned)g_vm.G[60], (unsigned)g_vm.G[61], (unsigned)g_vm.G[62]); puts(""); fflush(stdout); }
     fe_vm_restart(&g_vm, entry);
@@ -1720,12 +1828,18 @@ static void fe_start_match(int m)
     if (!fighter_exists(p2) || p2 == p1) p2 = next_fighter(p1, 1);
     g_fe_mode = m;
     if (m == 2) {
+        if (!g_champ_keep) { g_champ_side = -1; g_champ_streak = 0; }   /* a new 2P session */
+        g_champ_keep = 0;
         g_two_players = 1; g_pick[0] = p1; g_pick[1] = p2;
         g_arena_sel = ar >= 1 && ar <= 11 ? ar : (p2 <= 11 ? p2 : 1);
         start_vs_fight();
     } else if (m == 1) {
         g_two_players = 0; g_pick[0] = p1;
-        build_ladder(p1);
+        if (g_lad_resume && g_nladder > 0) {     /* continue (0x41a7e0): same ladder and place; if the new
+                                                  * fighter is still to come, the old one takes his slot */
+            for (int k = g_ladder_pos; k < g_nladder; k++) if (g_ladder[k] == p1) g_ladder[k] = g_lad_old;
+        } else build_ladder(p1);
+        g_lad_resume = 0;
         start_vs_fight();
     } else {
         g_two_players = 0;
@@ -2039,6 +2153,9 @@ int main(int argc, char **argv)
             if (g_state != ST_FE3D) acc = 0;
             g_fe_alpha = (float)(acc / FE_TICK);   /* 15 Hz scripts, smooth drawing */
             if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
+        } else if (g_cont.on) {                      /* continue screen: the fight is frozen */
+            while (g_cont.on && acc >= tick_secs()) { cont_tick(); acc -= tick_secs(); }
+            if (!g_cont.on) acc = 0;
         } else if (g_game) {
             if (g_fight_paused) acc = 0;
             while (acc >= tick_secs() && g_state == ST_FIGHT) {

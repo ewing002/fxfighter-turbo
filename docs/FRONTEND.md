@@ -139,9 +139,19 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - visszatérés a meccs után (`ProcessWrapperReturns`, `0x413d3d`, státusz → G58): bemutató vége (0), Esc (0), 1P game
      over (10 → 0), létra vége (11 → 2, névbeírás), endurance vége (5/6 → 7: WINNER / LOSER képernyő; G59/G60 a győztes
      és a vesztes harcosa, G61/G62 az oldaluk, `0x41970d`), torna (13 → 6), 2P meccs (22 → 4, a 2P választó). Nincs a
-     portban: a meccs utáni folytatás-képernyők (p1cont/p2cont/pncont), a kihívó becsatlakozása 1P játékba (20 → 3,
-     G67 = a létra helye, op ED / `FUN_0041a8ee`), a hálózat (23 → 5), és a létra végi / game over videó (`win.brp`)
-     meg a stáblista (`credits.txt`, `0x429800`);
+     portban: a hálózat (23 → 5), a létra végi / game over videó (`win.brp`) és a stáblista (`credits.txt`, `0x429800`);
+   - folytatás-képernyő (`continue.c`, `0x4368c0`; részletek: a jegyzetek `continue_notes.md`): elveszett 1P meccs után
+     (`0x41aec7`) és minden 2P meccs után (`0x40413a`), a vesztes oldalra; endurance, torna, bemutató nem hívja. Két
+     acélajtó (doorl/doorr.cmp, 160×240) zárul be (x += v, v += 1,2 képkockánként, 17 képkocka), aztán „PLAYER n
+     CONTINUE” (p1cont/p2cont.cmp, 192×50, a (64, 51) helyen a 320×240-es képen), 2P-ben a bajnok kupája (champ.cmp,
+     80×32, a győztes fele alatt, a sorozat száma timer.pix számjegyekkel) és 10-től 0-ig visszaszámlálás (rndnumbr.pix,
+     (134, 151), valós idő, 10,98 s). Hangok a `continue` bankból: 1 ajtó indul, 2 ajtó becsukódik + 5 „Continue?”,
+     3/4 ketyegés (páros / páratlan); a zene ilyenkor halkabb. Csak a vesztes bemenete számít: ütés → 1 (QUICK CONTINUE
+     mellett 2), rúgás → 1, más gomb −0,25 s, lejárat → 0. 1P: 0 game over (főmenü), 1 → státusz 20 → belépési mód 3
+     (G67 = a létra helye): új harcos választása, és a létra ugyanott folytatódik (op ED / `0x41a7e0`: ha az új harcos még
+     hátravan, a régi kerül a helyére; az összidő megmarad), 2 → ugyanaz a meccs újra. 2P: 0 → főmenü, 1 → 2P választó
+     (a bajnok és a sorozata megmarad), 2 → visszavágó. A kupa sorozata (`0x40179e`: 0x4a1d68 / 0x4a1d6c) új 2P
+     menetnél nullázódik. Nincs a portban: a hálózati változatok (pncont, pnwcont) és a kihívó becsatlakozása;
    - rekordtábla (`0x4a7b40`, `fight/hiscores.dat`): 10 × 8 bájt, 3 betű, a harcos és az idő (DOS-tick, 18,2 Hz,
      16.16). A front end minden indulásakor és visszatérésekor az OPT[0..19]-be kerül (`FUN_0043b513`: OPT[i] = a
      betűk − 'A' a felső három bájtban, a harcos az alsóban; OPT[10+i] = az idő számjegyei P P M M bájtonként), az
@@ -161,7 +171,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a folytatás-képernyők és a kihívó (ED, G67), a videók és a stáblista.
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása, a videók és a stáblista.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
    `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü

@@ -11,7 +11,7 @@
 typedef struct { GLuint tex; int w, h; float u1, v1; int ok; } Sprite;
 
 void ui_load_bout(const Pac *pac, const Rgb *arena_pal);   /* boutgfx sprites use the arena palette */
-const Sprite *ui_bout(const char *name);                   /* boutgfx/<name>.pix */
+const Sprite *ui_bout(const char *name);                   /* boutgfx/<name>.pix (or the continue .cmp images) */
 
 void ui_begin(int win_w, int win_h);                       /* 640x480 virtual, letterboxed */
 void ui_end(void);

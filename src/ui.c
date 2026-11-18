@@ -15,6 +15,13 @@ static const char *BOUT_NAMES[] = {
     "pan_cr7", "pan_cr8", "pan_cr9", "pan_cr10", "pan_cr11", "pan_cr12" };
 #define NBOUT (int)(sizeof BOUT_NAMES / sizeof *BOUT_NAMES)
 static Sprite g_bout[NBOUT];
+/* continue screen images (continue.c): raw .cmp, sizes fixed in the code; banner and champ use the
+ * red indices 0 / 1 as background (key -2), the doors are opaque */
+static const struct { const char *n; int w, h, key; } CMP_IMG[] = {
+    { "doorl", 160, 240, -1 }, { "doorr", 160, 240, -1 }, { "p1cont", 192, 50, -2 }, { "p2cont", 192, 50, -2 },
+    { "champ", 80, 32, -2 } };
+#define NCMP (int)(sizeof CMP_IMG / sizeof *CMP_IMG)
+static Sprite g_cmp[NCMP];
 static float  g_ox, g_oy, g_sc;
 
 static int pot(int v) { int p = 1; while (p < v) p <<= 1; return p; }
@@ -32,7 +39,7 @@ static Sprite make_sprite(const uint8_t *px, int w, int h, int stride, const Rgb
         for (int x = 0; x < w; x++) {
             uint8_t v = row[x];
             uint8_t *o = rgba + ((size_t)y * tw + x) * 4;
-            o[0] = pal[v].r; o[1] = pal[v].g; o[2] = pal[v].b; o[3] = (key >= 0 && v == key) ? 0 : 255;
+            o[0] = pal[v].r; o[1] = pal[v].g; o[2] = pal[v].b; o[3] = ((key >= 0 && v == key) || (key == -2 && v <= 1)) ? 0 : 255;
         }
     }
     glGenTextures(1, &s.tex);
@@ -60,11 +67,23 @@ void ui_load_bout(const Pac *pac, const Rgb *pal)
             pix_free(&pm);
         }
     }
+    for (int i = 0; i < NCMP; i++) {
+        if (g_cmp[i].ok) glDeleteTextures(1, &g_cmp[i].tex);
+        memset(&g_cmp[i], 0, sizeof g_cmp[i]);
+        char path[64]; size_t sz, usz;
+        snprintf(path, sizeof path, "fight/boutgfx/%s.cmp", CMP_IMG[i].n);
+        const uint8_t *d = pac_get(pac, path, &sz);
+        uint8_t *px = d ? cmp_decode(d, sz, &usz) : NULL;
+        if (px && usz >= (size_t)CMP_IMG[i].w * CMP_IMG[i].h)
+            g_cmp[i] = make_sprite(px, CMP_IMG[i].w, CMP_IMG[i].h, CMP_IMG[i].w, pal, CMP_IMG[i].key, 0);
+        free(px);
+    }
 }
 
 const Sprite *ui_bout(const char *name)
 {
     for (int i = 0; i < NBOUT; i++) if (!strcmp(BOUT_NAMES[i], name)) return g_bout[i].ok ? &g_bout[i] : NULL;
+    for (int i = 0; i < NCMP; i++) if (!strcmp(CMP_IMG[i].n, name)) return g_cmp[i].ok ? &g_cmp[i] : NULL;
     return NULL;
 }
 
