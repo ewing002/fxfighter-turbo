@@ -111,6 +111,7 @@ typedef struct {
     int    ev_lock;        /* cb540: after a hit check the move's events wait for an op 0 / >= 0xf1 record */
     int    edge_guard;     /* cb440: 1 from StartMove, op 0xda toggles; with ring-outs off keeps 1.8 from the edge */
     int    pelvis_out;     /* df3c8: pelvis was past the ring edge this round (sticky) */
+    float  floor_h;        /* cb498: floor height under the fighter, 0 or the arena's fall depth */
     float  tx, ty;         /* a8330 / a8320: pelvis position followed with a 0.1 dead zone */
     const Model *mesh;     /* body parts (for keeping the feet on the floor), optional */
     int    nmesh;

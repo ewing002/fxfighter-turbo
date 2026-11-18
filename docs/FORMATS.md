@@ -198,6 +198,9 @@ Ringből kiesés (`0x43f36e`): tickenként csak a középtől messzebb lévő ha
 A „medence kint” jelző (`df3c8`: |x| vagy |y| > félméret − 0,1) a kör végéig megmarad. Fekvő medence (z < 0,15) és a jelző → RING OUT SLIDE HEAD / FEET (9/10);
 álló harcos, kilógó és talajközeli (z < 0,2) lábfej → RING OUT BACKWARDS / STEP (7/6). Az első változat (9, illetve 7) akkor jön,
 ha a harcos az ellenfél felé néz és annak medencéje nem járt kint, vagy háttal áll és járt kint; egyébként a második. Ezzel elveszíti a kört.
+Talajmagasság (`cb498`): ugyanez a függvény minden ticken, kieséstől függetlenül beállítja a harcos alatti talajt: 0, vagy az aréna
+alsó szintje (`fi[0x4c]`, fall depth), ha a medence (félméret − 0,1) vagy bármelyik lábfej (félméret) kint van; kikapcsolt kiesésnél 0.
+A leszállás (`0x441245`) ehhez igazít (magasság ≥ talaj + 0,3). Így a peremen túl elesett vagy KO-zott harcos lezuhan, nem lebeg.
 
 ## Hang ✅
 ### `sound/*.asf` – 4 bites DPCM (dekóder: `FUN_0044f7b1`, rutinok `0x44f7e6` / `0x44fb1e`)

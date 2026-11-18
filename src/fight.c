@@ -816,6 +816,15 @@ static void ground(Fight *f, int i)
         return;
     }
     if (p->mode >= 1 && p->mode <= 3) return;          /* jump arc: move_modes() */
+    if (p->floor_h < 0) {                               /* past the edge without a ring-out (a KO, a fall
+                                                         * over the edge): down onto the lower ground */
+        float low = lowest_joint(f, i);
+        if (low > p->floor_h + 0.002f || p->vz > 0) { p->vz -= 9.8f / FIGHT_HZ; p->z += p->vz / FIGHT_HZ; }
+        low = lowest_joint(f, i);
+        if (low < p->floor_h) { p->z += p->floor_h - low; p->vz = 0; }
+        return;
+    }
+    p->vz = 0;
     float low = lowest_joint(f, i);
     if (low < 0) p->z -= low;
     else if (p->z > 0) p->z -= fminf(fminf(p->z, low), 0.07f);
@@ -952,6 +961,9 @@ static void ring_out_check(Fight *f, int i, int farther)
     float h = f->ring_half;
     if (outside(pel, h - 0.1f) > 0) p->pelvis_out = 1;          /* df3c8, kept until the round ends */
     int feet_out = outside(lf, h) > 0 || outside(rf, h) > 0;
+    /* cb498: the floor under the fighter, set every tick whether he falls out or not: the lower
+     * ground once the pelvis (h - 0.1) or a foot (h) is past the edge; 0 with ring-outs off */
+    p->floor_h = f->ringouts && (outside(pel, h - 0.1f) > 0 || feet_out) ? f->fall_depth : 0;
     if (!f->ringouts || f->winner >= 0 || farther != i) return;
     /* the fall is picked by facing (cb490) and whether the opponent's pelvis has been out */
     int same = !facing_away(f, i) == !f->p[i ^ 1].pelvis_out;
@@ -1009,7 +1021,7 @@ void fight_reset(Fight *f)
         p->owner = i;
         p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0;
         p->radius = 0.3f;
-        p->ringout = 0; p->vz = 0; p->have_prev_box = 0;
+        p->ringout = 0; p->vz = 0; p->floor_h = 0; p->have_prev_box = 0;
         p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0;
         p->pelvis_out = 0;
         f->hit_pending[i] = 0;
