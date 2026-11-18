@@ -35,6 +35,8 @@ a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi t�
 Elveszett 1 játékos meccs és minden 2 játékos meccs után az eredeti CONTINUE képernyő jön (10 mp): ütés vagy rúgás = folytatás
 (1P: új harcos, a létra ugyanott folytatódik; 2P: harcosválasztó), más gomb gyorsítja, lejáratkor vissza a főmenübe.
 `quick_continue=1` (az OPTIONS QUICK CONTINUE pontja) mellett az ütés azonnali visszavágót indít.
+Rejtett harcos: a harcosválasztóban Magnonon állva tartsd nyomva a rúgást, és úgy nyomd meg az ütést: Jerzan jön, az eredeti
+félbehagyott 12. harcosa (a port a hiányzó testét Magnonéból pótolja). 1 és 2 játékos módban is működik.
 Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a második kontroller Start gombja) megszakítja a meccset,
 és a 2 játékos harcosválasztó jön (a port bővítése; `challenger=0` kikapcsolja).
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.

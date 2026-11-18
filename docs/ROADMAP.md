@@ -54,4 +54,4 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 - A kábulás (`f1a48 = 0x17f`, valószínűleg csillag-effekt vagy hang) látványeleme még hiányzik, csak a mechanika van meg.
 - A portrék és a harcosok összerendelése a `frontend/demo.mat` anyagaiból jön (pl. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
 - A menük az eredeti 3D jelenetek, az eredeti szkriptekkel (`docs/FRONTEND.md`); a régi 2D-s menük kikerültek.
-- Jerzan (fm12.dat, `pan_cr12`) nem hiba: az eredeti létratáblájában nem szerepel, a modelljének teste szándékosan pontnyira zsugorított. Kimarad a létrából, ahogy az eredetiben.
+- Jerzan (fm12.dat, `pan_cr12`) az eredetiben félbehagyott: a létratáblájában nem szerepel, a teste pontnyira zsugorított, az animációja Magnoné. A portban rejtett harcos (bővítés): Magnon testrészeivel és Jerzan textúrájával jelenik meg, a választóban Magnonon rúgás + ütéssel választható.

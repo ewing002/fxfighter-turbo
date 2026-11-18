@@ -241,6 +241,39 @@ static int fighter_exists(int id)
         && getf("fight/moves/f%d.ste", id, NULL);
 }
 
+/* port extension: Jerzan (fighter 12) is unfinished in FIGHT.EXE. Its animations are Magnon's (f12.ani == f1.ani)
+ * and only the skull, hands and feet of fm12.dat / fm12b.dat have a shape: every vertex of the other parts is
+ * one point. Those parts take Magnon's geometry (same skeleton), drawn with Jerzan's own material and texture. */
+static void jerzan_body(Fighter *f)
+{
+    size_t sz;
+    const uint8_t *d = getf("fight/fighters/fm%d.dat", 1, &sz);
+    if (!d) return;
+    Model mg[MAX_PARTS];
+    int n = model_load_all(d, sz, mg, MAX_PARTS);
+    for (int i = 0; i < f->nparts; i++) {
+        Model *m = &f->parts[i];
+        float lo[3] = { 1e9f, 1e9f, 1e9f }, hi[3] = { -1e9f, -1e9f, -1e9f };
+        for (int v = 0; v < m->nverts; v++) {
+            const float *p = &m->verts[v].x;
+            for (int k = 0; k < 3; k++) { if (p[k] < lo[k]) lo[k] = p[k]; if (p[k] > hi[k]) hi[k] = p[k]; }
+        }
+        if (m->nverts && (hi[0] - lo[0]) + (hi[1] - lo[1]) + (hi[2] - lo[2]) > 1e-4f) continue;   /* has a shape */
+        for (int j = 0; j < n; j++) {
+            if (strcmp(mg[j].name, m->name) || !mg[j].nverts) continue;
+            Model t = mg[j];
+            for (int k = 0; k < t.nfaces; k++) t.faces[k].mat = 1;    /* Jerzan's (only) material */
+            free(t.mats); t.mats = m->mats; t.nmats = m->nmats; m->mats = NULL; m->nmats = 0;
+            memcpy(t.name, m->name, sizeof t.name);
+            model_free(m);
+            *m = t;
+            memset(&mg[j], 0, sizeof mg[j]);
+            break;
+        }
+    }
+    for (int j = 0; j < n; j++) model_free(&mg[j]);
+}
+
 static int fighter_load(Fighter *f, int id, const Rgb *pal)
 {
     int clip = f->clip;
@@ -253,6 +286,7 @@ static int fighter_load(Fighter *f, int id, const Rgb *pal)
     const uint8_t *d = getf(alt ? "fight/fighters/fm%db.dat" : "fight/fighters/fm%d.dat", id, &sz);
     if (!d) return 0;
     f->nparts = model_load_all(d, sz, f->parts, MAX_PARTS);
+    if (id == 12) jerzan_body(f);
     d = getf("fight/fighters/f%d.ani", id, &sz);
     if (!d || !ani_load(d, sz, &f->anim)) { fprintf(stderr, "bad anim f%d\n", id); return 0; }
     f->tex = load_cmp_tex(alt ? "fight/fighters/f%db.cmp" : "fight/fighters/f%d.cmp", id, 256, pal);
@@ -1244,10 +1278,10 @@ static const uint8_t LADDER[11][4][10] = {
 static void build_ladder(int player)
 {
     g_nladder = 0;
-    if (player >= 1 && player <= 11) {
+    if (player >= 1 && player <= 12) {             /* 12 = the hidden Jerzan: Magnon's orders (all 10 opponents) */
         int v = rand() & 3;                         /* the original picks one of the 4 orders at random */
         for (int k = 0; k < 10; k++) {
-            int id = LADDER[player - 1][v][k];
+            int id = LADDER[player == 12 ? 0 : player - 1][v][k];
             if (id != player && fighter_exists(id)) g_ladder[g_nladder++] = id;
         }
     } else {
@@ -1755,7 +1789,8 @@ static void after_match(void)
     if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
         int secs = (int)g_ladder_time;
         if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
-        g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
+        g_vm.G[62] = (g_f[0].id == 12 ? 1 : g_f[0].id) << 16;   /* the winner's fighter (the hidden Jerzan has no
+                                                  * portrait in the table: he is entered as Magnon) */
         g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
         static const char *const WIN[1] = { "win" };   /* 0x413f2d */
         play_videos(WIN, 1, after_win_video);
@@ -1831,6 +1866,7 @@ static int random_fighter(void)
  * (default 60) with the input script FX_FE_INPUT ("tick:KEY ..." with KEY = P1UP, P1DOWN,
  * P1LEFT, P1RIGHT, P1PUNCH, P1KICK, the same with P2, ESC, RAW<hex DirectInput code>; each press
  * lasts 3 ticks), then one frame is drawn ---- */
+static unsigned g_script_bits[2];               /* the menu input bits the test script set this tick */
 static void fe_script_input(FeVm *vm, const char *script, int tick)
 {
     unsigned bits[2] = { 0, 0 }; int esc = 0;
@@ -1857,6 +1893,7 @@ static void fe_script_input(FeVm *vm, const char *script, int tick)
     fe_vm_set_input(vm, 0, bits[0]);
     fe_vm_set_input(vm, 1, bits[1]);
     fe_vm_key_esc(vm, esc);
+    g_script_bits[0] = bits[0]; g_script_bits[1] = bits[1];
 }
 
 static int fe3d_shot(const char *path, SDL_Window *win)
@@ -1910,6 +1947,8 @@ static int fe3d_shot(const char *path, SDL_Window *win)
  * ================================================================== */
 #define FE_TICK (1.0 / 15.0)                    /* the scripts run at 15 Hz */
 static uint8_t  g_fe_latch[SDL_NUM_SCANCODES];  /* keys pressed since the last VM tick */
+static unsigned g_fe_bits[2], g_fe_prev[2];     /* menu input this / last tick */
+static int      g_jerzan[2];                    /* secret: this player confirmed with KICK held */
 static int      g_fe_ticks;                     /* ticks since fe_enter (FX_FE_INPUT test scripts) */
 
 /* SDL scan code -> DirectInput (PC set 1) scan code, as stored in fight.prf and read by op 0xE4 */
@@ -2096,6 +2135,7 @@ static void fe_enter_entry(int entry)
     if (getenv("FX_AUTOTEST")) { printf("fe3d entry %d G59 %x G60 %x G61 %x G62 %x", entry, (unsigned)g_vm.G[59], (unsigned)g_vm.G[60], (unsigned)g_vm.G[61], (unsigned)g_vm.G[62]); puts(""); fflush(stdout); }
     fe_vm_restart(&g_vm, entry);
     memset(g_fe_latch, 0, sizeof g_fe_latch);
+    g_jerzan[0] = g_jerzan[1] = 0;
     g_fe_ticks = 0;
     set_state(ST_FE3D);
 }
@@ -2229,6 +2269,14 @@ static void fe_start_match(int m)
         }
         p1 = g_vm.G[11] >> 16; m = 1;            /* unexpected count: a one player ladder */
     }
+    /* port extension, the hidden fighter: picking Magnon with KICK held while PUNCH confirms gives Jerzan
+     * (fighter 12, Magnon's animations; see jerzan_body) in a 1P ladder or a 2P match */
+    if ((m == 1 || m == 2) && fighter_exists(12)) {
+        if (g_jerzan[0] && p1 == 1) p1 = 12;
+        if (m == 2 && g_jerzan[1] && p2 == 1) p2 = 12;
+    }
+    g_jerzan[0] = g_jerzan[1] = 0;
+    if (getenv("FX_AUTOTEST") && (m == 1 || m == 2)) { printf("match: p1 %d p2 %d", p1, p2); puts(""); fflush(stdout); }
     if (!fighter_exists(p1)) p1 = random_fighter();
     if (!fighter_exists(p2) || p2 == p1) p2 = next_fighter(p1, 1);
     g_fe_mode = m;
@@ -2282,6 +2330,7 @@ static int fe_tick(void)
             if (SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_B) || SDL_GameControllerGetButton(gc, SDL_CONTROLLER_BUTTON_BACK)) esc = 1;
         }
         fe_vm_set_input(&g_vm, p, b);
+        g_fe_bits[p] = b;
     }
     for (int sc = 1; sc < SDL_NUM_SCANCODES; sc++) {             /* raw keys (redefine screens) */
         int d = di_scan((SDL_Scancode)sc);
@@ -2289,7 +2338,14 @@ static int fe_tick(void)
     }
     fe_vm_key_esc(&g_vm, esc);
 #undef FE_KD
-    if (getenv("FX_FE_INPUT")) fe_script_input(&g_vm, getenv("FX_FE_INPUT"), g_fe_ticks);   /* testing */
+    if (getenv("FX_FE_INPUT")) {                                 /* testing */
+        fe_script_input(&g_vm, getenv("FX_FE_INPUT"), g_fe_ticks);
+        g_fe_bits[0] = g_script_bits[0]; g_fe_bits[1] = g_script_bits[1];
+    }
+    for (int p = 0; p < 2; p++) {                 /* secret Jerzan: PUNCH pressed while KICK is held */
+        if ((g_fe_bits[p] & IN_PUNCH) && !(g_fe_prev[p] & IN_PUNCH) && (g_fe_bits[p] & IN_KICK)) g_jerzan[p] = 1;
+        g_fe_prev[p] = g_fe_bits[p];
+    }
     g_fe_ticks++;
     memset(g_fe_latch, 0, sizeof g_fe_latch);
 
