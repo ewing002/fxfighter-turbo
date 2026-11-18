@@ -25,7 +25,7 @@
 #define FEVM_CFG        0x2a     /* config block DAT_004a5878 (fight.prf) */
 /* byte offsets in the config block: handicaps (4), CPU level (0x4a587c), round time (int16 seconds,
  * -1 = none), rounds to win, 12 key scan codes, game speed, sound / CD volume (1..8) */
-enum { FECFG_HC = 0, FECFG_DIFF = 4, FECFG_RTIME = 6, FECFG_ROUNDS = 8, FECFG_KEYS = 0x12,
+enum { FECFG_HC = 0, FECFG_DIFF = 4, FECFG_RTIME = 6, FECFG_ROUNDS = 8, FECFG_DET = 0x0b, FECFG_KEYS = 0x12,
        FECFG_SPEED = 0x21, FECFG_SVOL = 0x22, FECFG_CDVOL = 0x23 };
 
 /* trigger record (0x18 bytes in the original) */

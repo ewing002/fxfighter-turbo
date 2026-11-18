@@ -33,7 +33,7 @@ A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítan
 a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
-Még hiányzik: nincs hálózati játék; a részletességi szintek nem hatnak a harcra.
+Még hiányzik: nincs hálózati játék; a padló két részletességi beállítása nem hat (a harcosoké igen).
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
@@ -66,7 +66,9 @@ Rögzített kameranézetek, mint az eredetiben: **Home** = be/ki, **Insert / Del
 nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb lépések.
 
 A harc a gombokat tickenként (48/s) olvassa; a két olvasás közé eső rövid nyomást a port megjegyzi, így egy gyors koppintás sem vész el
-(billentyűzet és kontroller). A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
+(billentyűzet és kontroller). A 2. játékost 1 játékos módban a gép irányítja. Harc közben, mint az eredetiben: F1 / F2 = az 1. / 2. játékos textúrája be/ki,
+F3 / F4 = árnyalása (Gouraud / sík), F5 = padló-részletesség, F6 = padlótextúra (ez a kettő csak tárolódik). Teszteléshez a parancssori
+harcban (`--p1 N --p2 N`) a régi gyorsgombok működnek (F1 nézet, F3/F4 gépi irányítás, F5 újraindítás, R/1/2/9/0/N).
 
 Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
 valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.

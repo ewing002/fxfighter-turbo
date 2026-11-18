@@ -90,8 +90,8 @@ static double g_ladder_time;                    /* 1P ladder: fight time so far 
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7]; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 } };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 /* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
  * i.e. 48, 60 and 66.7 Hz */
@@ -282,15 +282,35 @@ static void face_normal(const Vec3 *a, const Vec3 *b, const Vec3 *c, float n[3])
  *    index_base .. index_base+index_range (BANKn = 10+16*(n-1)), a dark->bright ramp. */
 static const Rgb *g_cur_pal;
 
+/* fighter detail (0x4a5883..86, per player: texture, shading; 0x444... "TYPE: FLAT / GOURARD [TEXTURED]"):
+ * DM_TEX draws the textures (off: material colours), DM_SMOOTH Gouraud shading (off: flat) */
+enum { DM_TEX = 1, DM_SMOOTH = 2 };
+static int g_draw_mode = DM_TEX;
+
 static void draw_model(const Model *m, GLuint tex, int tile)
 {
     const float in = 0.5f / 64.0f;
     float tu = (float)(tile & 3), tv = (float)((tile >> 2) & 3);
+    static float (*vn)[3]; static int vn_cap;          /* Gouraud: vertex normals, face normals averaged */
+    int smooth = (g_draw_mode & DM_SMOOTH) && m->nverts > 0;
+    if (smooth) {
+        if (vn_cap < m->nverts) { free(vn); vn_cap = m->nverts; vn = calloc((size_t)vn_cap, sizeof *vn); }
+        if (!vn) smooth = 0;
+    }
+    if (smooth) {
+        memset(vn, 0, sizeof *vn * (size_t)m->nverts);
+        for (int i = 0; i < m->nfaces; i++) {
+            const Face *f = &m->faces[i];
+            if (f->v[0] >= m->nverts || f->v[1] >= m->nverts || f->v[2] >= m->nverts) continue;
+            float n[3]; face_normal(&m->verts[f->v[0]], &m->verts[f->v[1]], &m->verts[f->v[2]], n);
+            for (int k = 0; k < 3; k++) for (int c = 0; c < 3; c++) vn[f->v[k]][c] += n[c];
+        }
+    }
     for (int i = 0; i < m->nfaces; i++) {
         const Face *f = &m->faces[i];
         if (f->v[0] >= m->nverts || f->v[1] >= m->nverts || f->v[2] >= m->nverts) continue;
         const char *mn = (f->mat && f->mat <= m->nmats) ? m->mats[f->mat - 1] : "";
-        int textured = (mn[0] == 'T' && mn[1] == 'X' && m->uvs && tex);
+        int textured = (mn[0] == 'T' && mn[1] == 'X' && m->uvs && tex && (g_draw_mode & DM_TEX));
         const Material *mat = material_find(g_mats, g_nmats, mn);
         if (textured) {
             glEnable(GL_TEXTURE_2D);
@@ -311,6 +331,7 @@ static void draw_model(const Model *m, GLuint tex, int tile)
         glNormal3fv(n);
         for (int k = 0; k < 3; k++) {
             int vi = f->v[k];
+            if (smooth) glNormal3fv(vn[vi]);
             if (textured) {
                 float u = m->uvs[vi].u, v = m->uvs[vi].v;
                 if (!(u >= in)) u = in;          /* also catches NaN / garbage values */
@@ -617,8 +638,11 @@ static void render(int w, int h)
     Pose p0 = g_game ? game_pose(0) : viewer_pose(&g_f[0], -1);
     Pose p1 = g_game ? game_pose(1) : viewer_pose(&g_f[1], +1);
     draw_shadow(p0); draw_shadow(p1);
-    draw_fighter(&g_f[0], p0);
-    draw_fighter(&g_f[1], p1);
+    for (int i = 0; i < 2; i++) {                 /* per player detail (0x402004) */
+        g_draw_mode = (g_cfg.det[2 * i] ? DM_TEX : 0) | (g_cfg.det[2 * i + 1] ? DM_SMOOTH : 0);
+        draw_fighter(&g_f[i], i ? p1 : p0);
+    }
+    g_draw_mode = DM_TEX;
     glDisable(GL_LIGHTING);
     if (g_game) draw_hud(w, h);
 }
@@ -890,6 +914,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "speed")) g_cfg.speed = v < 1 ? 1 : v > 3 ? 3 : v;
         else if (!strcmp(k, "ring_guard")) g_cfg.ring_guard = v != 0;
         else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
+        else if (!strncmp(k, "detail", 6) && k[6] >= '1' && k[6] <= '7' && !k[7]) g_cfg.det[k[6] - '1'] = v < 0 ? 0 : v > 2 ? 2 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
             g_cfg.hc[k[8] - '1'] = v < 1 ? 0 : v > 8 ? 7 : v - 1;
         else if (!strncmp(k, "key", 3)) {                 /* key1..key12: DirectInput scan codes */
@@ -909,6 +934,7 @@ static void cfg_save(void)
             g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
             g_cfg.difficulty);
     fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\nring_guard=%d\ninput_buffer=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed, g_cfg.ring_guard, g_cfg.input_buffer);
+    for (int i = 0; i < 7; i++) fprintf(f, "detail%d=%d\n", i + 1, g_cfg.det[i]);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -1416,6 +1442,7 @@ static void port_to_fecfg(void)
     c[FECFG_DIFF] = (uint8_t)g_cfg.difficulty;
     c[FECFG_HC] = (uint8_t)g_cfg.hc[0]; c[FECFG_HC + 1] = (uint8_t)g_cfg.hc[1];
     c[FECFG_SPEED] = (uint8_t)g_cfg.speed;
+    for (int i = 0; i < 7; i++) c[FECFG_DET + i] = (uint8_t)g_cfg.det[i];
     int rt = g_cfg.round_secs > 90 ? 90 : g_cfg.round_secs;          /* 99 s: not in the original */
     c[FECFG_RTIME] = (uint8_t)(rt & 0xff); c[FECFG_RTIME + 1] = (uint8_t)((rt >> 8) & 0xff);
     c[FECFG_ROUNDS] = (uint8_t)((g_cfg.rounds + 1) / 2);
@@ -1430,6 +1457,7 @@ static void fecfg_to_port(void)
     g_cfg.difficulty = c[FECFG_DIFF] > 7 ? 7 : c[FECFG_DIFF];
     for (int i = 0; i < 2; i++) g_cfg.hc[i] = c[FECFG_HC + i] > 7 ? 3 : c[FECFG_HC + i];
     g_cfg.speed = c[FECFG_SPEED] < 1 ? 1 : c[FECFG_SPEED] > 3 ? 3 : c[FECFG_SPEED];
+    for (int i = 0; i < 7; i++) g_cfg.det[i] = c[FECFG_DET + i] > 2 ? 1 : c[FECFG_DET + i];
     int rt = (int16_t)(c[FECFG_RTIME] | c[FECFG_RTIME + 1] << 8);
     g_cfg.round_secs = rt < 0 ? -1 : (rt == 30 || rt == 90) ? rt : 60;
     int r = c[FECFG_ROUNDS];
@@ -1847,7 +1875,7 @@ int main(int argc, char **argv)
         cfg_apply();
         for (int i = 0; i < SDL_NumJoysticks(); i++) pad_added(i);
         if (!g_debug_fight) g_fe_ok = fe_load();
-    }
+    } else if (getenv("FX_PREFDIR")) cfg_load();   /* tests: screenshots with a given options.cfg */
     srand(shot ? 1234u : (unsigned)SDL_GetTicks() ^ 0x5eed);
 
     if (g_debug_fight || (shot && screen < 0)) {
@@ -1937,6 +1965,12 @@ int main(int argc, char **argv)
                 }
                 else if (k == SDLK_p || k == SDLK_PAUSE) g_fight_paused = !g_fight_paused;
                 else if (k == SDLK_x) sfx_toggle();
+                else if (!g_debug_fight && k >= SDLK_F1 && k <= SDLK_F6) {   /* 0x4414c7: detail keys in a fight */
+                    static const int SLOT[6] = { 0, 2, 1, 3, 5, 6 };       /* F1/F2 texture, F3/F4 shading P1/P2 */
+                    int d = SLOT[k - SDLK_F1];
+                    if (d == 5) g_cfg.det[5] = (g_cfg.det[5] + 1) % 3;      /* floor detail lo / med / hi */
+                    else g_cfg.det[d] ^= 1;
+                }
                 else if (k == SDLK_F1) { g_game = !g_game; if (g_game) { g_yaw = -1.5708f; g_pitch = 0.28f; g_dist = 3.6f; } }
                 else if (k == SDLK_n) {
                     arena_load(&g_arena, g_arena.id == 0 ? 1 : (g_arena.id == 11 ? 0 : g_arena.id + 1));
