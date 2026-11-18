@@ -36,6 +36,7 @@ int main(int argc, char **argv)
     fight_set_arena(&f, &afi);
     f.ringouts = 1;
     f.ring_guard = getenv("RING_GUARD") != NULL;               /* port option: no stepping out */
+    f.input_buffer = getenv("IBUF") ? atoi(getenv("IBUF")) : 0; /* port option: input buffer ticks */
     f.ai_level = getenv("AI") ? atoi(getenv("AI")) : 4;      /* CPU difficulty 0..7 */
     fight_reset(&f);
     int last[2] = { -1, -1 }, hp[2] = { MAX_HEALTH, MAX_HEALTH }, changes = 0, hits = 0, rounds = 0, ringouts = 0, kos = 0;
@@ -43,6 +44,15 @@ int main(int argc, char **argv)
     for (int t = 0; t < ticks; t++) {
         int w = f.winner;
         if (getenv("FORCE_IN")) { f.p[0].cpu = 0; f.p[1].cpu = 0; f.p[0].in = (t > 60 && t < (getenv("HOLD") ? atoi(getenv("HOLD")) : 70)) ? (unsigned)strtol(getenv("FORCE_IN"), 0, 16) : 0; }
+        if (getenv("FORCE_SEQ")) {          /* "tick:hexinput:len,..." for player 1, player 2 stands still */
+            f.p[0].cpu = 0; f.p[1].cpu = 0; f.p[0].in = 0;
+            for (const char *q = getenv("FORCE_SEQ"); q && *q; ) {
+                char *e; long t0 = strtol(q, &e, 10); unsigned v = 0; long len = 1;
+                if (*e == ':') { v = (unsigned)strtoul(e + 1, &e, 16); if (*e == ':') len = strtol(e + 1, &e, 10); }
+                if (t >= t0 && t < t0 + len) f.p[0].in |= v;
+                q = *e == ',' ? e + 1 : e; if (*e != ',') break;
+            }
+        }
         fight_tick(&f);
         if (getenv("FORCE_IN") && t > 55 && t < 130) printf("%d %-22s mode %d jt %.2f z %.2f s %.2f vel %.2f\n", t, player_move_name(&f.p[0]), f.p[0].mode, f.p[0].jt, f.p[0].z, f.p[0].s, f.p[0].vel);
         if (getenv("SND")) for (int k = 0; k < f.nsnd; k++) printf("SND %d %d %d\n", t, f.snd[k].bank, f.snd[k].index);

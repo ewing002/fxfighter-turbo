@@ -468,6 +468,7 @@ static int input_transitions(Fight *f, int i)
     Player *p = &f->p[i];
     if (p->ringout) return 0;
     unsigned in = p->in & 0x3f, word = ((in ^ (p->prev_in & 0x3f)) | (in << 8)) & 0xffff;
+    if (p->pend) word |= p->pend | (p->pend << 8);   /* port: a buffered press counts as just pressed */
     unsigned ctx = ctx_bits(f, i);
     int ost = opp_stance(f, i);
     for (int k = p->sp, guard = 0; guard < 256; k++, guard++) {
@@ -475,7 +476,7 @@ static int input_transitions(Fight *f, int i)
         if (is_term(r)) break;
         if (r->minfr > p->frame) continue;
         if (r->op == 0xdf) {
-            if (in & (r->mask >> 8)) { start_move(f, i, r->tgt); return 1; }
+            if (in & (r->mask >> 8)) { start_move(f, i, r->tgt); return 1; }   /* any-key cancel: keeps the buffer */
             continue;
         }
         if ((word & r->mask) != r->val) continue;
@@ -484,6 +485,7 @@ static int input_transitions(Fight *f, int i)
         if (c && (c & 0x10) && (c & 0x0f) == ost) continue;
         if ((unsigned)(r->ctx >> 4) != (r->ctx & ctx)) continue;
         start_move(f, i, r->tgt);
+        p->pend = 0;                                  /* the buffered press is used up */
         return 1;
     }
     return 0;
@@ -1042,7 +1044,7 @@ void fight_reset(Fight *f)
         p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0;
         p->radius = 0.3f;
         p->ringout = 0; p->vz = 0; p->floor_h = 0; p->have_prev_box = 0;
-        p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0;
+        p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0; p->pend = 0; p->pend_t = 0;
         p->pelvis_out = 0;
         f->hit_pending[i] = 0;
     }
@@ -1063,6 +1065,12 @@ void fight_tick(Fight *f)
     for (int i = 0; i < 2; i++) {
         Player *p = &f->p[i];
         if (p->in != p->prev_in) p->mash++;       /* 0x44176b: every input change counts for breaking free */
+        if (p->cpu || f->input_buffer <= 0) p->pend = 0;
+        else {                                    /* port: punch / kick presses wait a few ticks for a move */
+            if (p->pend && --p->pend_t <= 0) p->pend = 0;
+            unsigned press = p->in & ~p->prev_in & (IN_PUNCH | IN_KICK);
+            if (press) { p->pend |= press; p->pend_t = f->input_buffer; }
+        }
         process_events(f, i);
         if (p->cont_hit > 0 && hit_test(f, i, damage_of(f, i, p->cont_hit), f->hit_dir[i])) p->cont_hit = 0;
         unsigned op = rec(p, p->sp)->op;          /* a8278: guard state seen by the CPU opponent */

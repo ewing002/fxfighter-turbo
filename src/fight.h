@@ -111,6 +111,7 @@ typedef struct {
     int    ev_lock;        /* cb540: after a hit check the move's events wait for an op 0 / >= 0xf1 record */
     int    edge_guard;     /* cb440: 1 from StartMove, op 0xda toggles; with ring-outs off keeps 1.8 from the edge */
     int    pelvis_out;     /* df3c8: pelvis was past the ring edge this round (sticky) */
+    unsigned pend; int pend_t;   /* buffered punch / kick presses not used by a move yet (input_buffer) */
     float  floor_h;        /* cb498: floor height under the fighter, 0 or the arena's fall depth */
     float  tx, ty;         /* a8330 / a8320: pelvis position followed with a 0.1 dead zone */
     const Model *mesh;     /* body parts (for keeping the feet on the floor), optional */
@@ -137,6 +138,7 @@ typedef struct {
                             * clock runs in real time, one round_timer step per 24850 PIT ticks */
     int    clock_acc;
     int    ring_guard;     /* port option: a human player's own moves do not take him out of the ring */
+    int    input_buffer;   /* port option: a human's punch / kick press stays valid this many ticks (0 = original) */
     int    handicap[2];    /* two humans: damage factor index 0..7 = x0.7 .. x1.4 (0x4a5878, 3 = x1.0) */
     int    name_snd[2];    /* >0: the round winner is called by name, bank 0 index (tour.fxl, 0x42263c) */
     int    cam_shake;      /* set by self damage ops 100..149 (4a4bd4); the front end clears it */

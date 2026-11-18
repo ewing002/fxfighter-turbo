@@ -90,8 +90,8 @@ static double g_ladder_time;                    /* 1P ladder: fight time so far 
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 /* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
  * i.e. 48, 60 and 66.7 Hz */
@@ -889,6 +889,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "difficulty")) g_cfg.difficulty = v < 0 ? 0 : v > 7 ? 7 : v;
         else if (!strcmp(k, "speed")) g_cfg.speed = v < 1 ? 1 : v > 3 ? 3 : v;
         else if (!strcmp(k, "ring_guard")) g_cfg.ring_guard = v != 0;
+        else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
             g_cfg.hc[k[8] - '1'] = v < 1 ? 0 : v > 8 ? 7 : v - 1;
         else if (!strncmp(k, "key", 3)) {                 /* key1..key12: DirectInput scan codes */
@@ -907,7 +908,7 @@ static void cfg_save(void)
     fprintf(f, "fullscreen=%d\nvsync=%d\nmusic=%d\nsfx=%d\nrounds=%d\nround_time=%d\nringouts=%d\nrumble=%d\ndifficulty=%d\n",
             g_cfg.fullscreen, g_cfg.vsync, g_cfg.music, g_cfg.sfx, g_cfg.rounds, g_cfg.round_secs, g_cfg.ringouts, g_cfg.rumble,
             g_cfg.difficulty);
-    fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\nring_guard=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed, g_cfg.ring_guard);
+    fprintf(f, "handicap1=%d\nhandicap2=%d\nspeed=%d\nring_guard=%d\ninput_buffer=%d\n", g_cfg.hc[0] + 1, g_cfg.hc[1] + 1, g_cfg.speed, g_cfg.ring_guard, g_cfg.input_buffer);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
 }
@@ -926,6 +927,7 @@ static void cfg_apply(void)
     g_fight.handicap[0] = g_cfg.hc[0]; g_fight.handicap[1] = g_cfg.hc[1];
     g_fight.tick_pit = speed_pit(g_cfg.speed);
     g_fight.ring_guard = g_cfg.ring_guard;
+    g_fight.input_buffer = g_cfg.input_buffer;
     keys_apply();
 }
 
