@@ -41,7 +41,10 @@ Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a máso
 és a 2 játékos harcosválasztó jön (a port bővítése; `challenger=0` kikapcsolja).
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
-Még hiányzik: nincs hálózati játék; a padló két részletességi beállítása nem hat (a harcosoké igen).
+Még hiányzik: nincs hálózati játék, és a sprite-effektek (ütésszikra, vér, lövedékek képe) sem látszanak.
+Harc közben F1–F4 a két harcos textúráját és árnyalását kapcsolja, F5 a padlótextúrát (ki / be / perspektivikus), F6 a hátteret.
+A padló részletessége (`detail6` az `options.cfg`-ben, 0–2) az aréna betöltésekor hat; 0-nál, mint az eredetiben,
+nincs padlómodell, és ringből kiesés sincs.
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.

@@ -58,6 +58,9 @@ typedef struct {
     FighterInfo fi;          /* arena parameters (ring size, fall depth) from fi%d.cmp */
     float   land_half;       /* extent of the lower ground at the fall depth */
     int     id;
+    int     detail;          /* floor detail at load (0x4a5888): 0 none, 1 floor_m, 2 floor_h */
+    float   fa_acc[18];      /* 0x4f1560: floor animation accumulators */
+    int     fa_n[18];        /* steps applied since the part's matrix was last reset */
 } Arena;
 
 static Pac       g_pac;
@@ -199,6 +202,44 @@ static void arena_free(Arena *a)
     memset(a, 0, sizeof *a);
 }
 
+/* floor part animation (0x428f0a, every frame with f = ticks since the last one; here once per tick): only at
+ * the highest floor detail, not paused, not in arena 5. The floor actor's children are in reverse file order and
+ * the loop stops before the last one, so file part k uses slot k + 18 - N and part 0 never moves. Used by
+ * arena 0xa (two walls slide along z) and 0xb (the wireframe dome turns). Reset at round setup (0x4464c2). */
+static void floor_anim_reset(Arena *a) { memset(a->fa_acc, 0, sizeof a->fa_acc); memset(a->fa_n, 0, sizeof a->fa_n); }
+
+static void floor_anim_tick(Arena *a)
+{
+    if (a->detail != 2 || a->id == 5) return;
+    int stop = 0;
+    for (int k = a->nparts - 1; k >= 1; k--) {
+        int j = k + 18 - a->nparts;
+        if (j < 0) break;
+        a->fa_acc[j] += a->fi.fa_speed[j];
+        if (fabsf(a->fa_acc[j]) >= fabsf(a->fi.fa_limit[j])) {
+            if (!(a->fi.fa_type[j] & 0x80)) { a->fa_n[j] = 0; a->fa_acc[j] = 0; }   /* identity, then this step */
+            else stop = 1;                            /* one-shot: stays put (this and the later parts) */
+        }
+        if (!stop) a->fa_n[j]++;
+    }
+}
+
+/* the part's accumulated matrix: n steps, each truncated like the original (16.16 units, BrAngle) */
+static void floor_anim_apply(const Arena *a, int k)
+{
+    int j = k + 18 - a->nparts;
+    if (a->detail != 2 || k < 1 || j < 0 || !a->fa_n[j]) return;
+    float sp = a->fi.fa_speed[j], n = (float)a->fa_n[j];
+    int kind = a->fi.fa_type[j] & 0x7f;
+    if (kind >= 3 && kind <= 5) {
+        float deg = n * truncf(sp * 182.0f) * 360.0f / 65536.0f;
+        glRotatef(deg, kind == 3, kind == 4, kind == 5);
+    } else {
+        float d = n * truncf(sp * 65536.0f) / 65536.0f;
+        glTranslatef(kind == 1 ? d : 0, kind == 1 || kind == 2 ? 0 : d, kind == 2 ? d : 0);
+    }
+}
+
 static int arena_load(Arena *a, int id)
 {
     arena_free(a);
@@ -206,9 +247,18 @@ static int arena_load(Arena *a, int id)
     size_t sz;
     const uint8_t *d = getf("fight/bgrounds/picp%x.cmp", id, &sz);
     if (!d || !pal_load_pixelmap(d, sz, a->pal)) return 0;
-    d = getf("fight/floors/floor_h%x.dat", id, &sz);
-    if (d) a->nparts = model_load_all(d, sz, a->parts, MAX_PARTS);
-    a->floor_tex = load_cmp_tex("fight/floors/floor_h%x.cmp", id, 256, a->pal);
+    /* floor detail (0x41bfd0): 0 no floor model at all, 1 floor_m%x (the same plain ring for every arena),
+     * 2 floor_h%x (the full scenery); the texture floor_%c%x.cmp falls back to the h one */
+    a->detail = g_cfg.det[5] < 0 ? 0 : g_cfg.det[5] > 2 ? 2 : g_cfg.det[5];
+    if (a->detail) {
+        d = getf(a->detail == 1 ? "fight/floors/floor_m%x.dat" : "fight/floors/floor_h%x.dat", id, &sz);
+        if (!d) d = getf("fight/floors/floor_h%x.dat", id, &sz);
+        if (d) a->nparts = model_load_all(d, sz, a->parts, MAX_PARTS);
+        if (a->detail == 1 && getf("fight/floors/floor_m%x.cmp", id, NULL))
+            a->floor_tex = load_cmp_tex("fight/floors/floor_m%x.cmp", id, 256, a->pal);
+        else a->floor_tex = load_cmp_tex("fight/floors/floor_h%x.cmp", id, 256, a->pal);
+    }
+    g_fight.no_floor = a->detail == 0;
     a->bg_tex = load_cmp_tex("fight/bgrounds/pic%x.cmp", id, 640, a->pal);
     d = getf("fight/fighters/fi%d.cmp", id, &sz);
     if (d) fighter_info_load(&a->fi, d, sz);
@@ -331,13 +381,104 @@ static const Rgb *g_cur_pal;
  * DM_TEX draws the textures (off: material colours), DM_SMOOTH Gouraud shading (off: flat) */
 enum { DM_TEX = 1, DM_SMOOTH = 2 };
 static int g_draw_mode = DM_TEX;
+/* the floor pass: the floor materials (0x41cdcd) instead of the fighter ones */
+static int g_floor_pass;
+
+/* ---- BRender index lighting (SOFTRNDX, see docs/FORMATS.md "Színezés") ----
+ * One direct light along world +Z with strength s = 1 / attenuation_c (0x4a4470[arena]: 0.9, or -0.6 in
+ * arenas 0, 8, 9 = lit from below), no ambient light. Per vertex (Gouraud) or per face:
+ *   l = ka + (d > 0 ? kd d + spec : 0),  d = s (n . L),  spec = h > 0.6172 ? h ks s / (p - p h + h) : 0,
+ *   h = n . normalize(L + eye);  l is clamped to [0, 1).
+ * Untextured faces: palette[base + 0.5 + range l]. Lit textured faces: colmap row 0.5 + 63 l (row 48 = the
+ * raw texel, below it darker); the port modulates the texture by min(row / 48, 1), so the whitening of
+ * rows above 48 (specular highlights) is lost. Unlit textured faces: raw texels. */
+static float g_light_eye[3] = { 0, 0, 1 }, g_light_s = 1.111f;
+
+enum { SH_GL, SH_RAW, SH_TEXLIT, SH_RAMP, SH_FLAT };   /* SH_FLAT: one unlit palette colour */
+typedef struct { int kind, smooth, base, range; float ka, kd, ks, pw; } Shade;
+
+/* the material's bank number from its name: TXBANK6 -> 6, FBANK2 -> 2, TXGFLOOR3 -> 3 */
+static int mat_bank(const char *s) { while (*s && (*s < '0' || *s > '9')) s++; return atoi(s); }
+
+static Shade shade_of(const char *mn, int textured)
+{
+    Shade sh = { SH_GL, 0, 0, 0, 0, 0, 0, 20 };
+    if (g_floor_pass) {                               /* floor materials (0x41cdcd) */
+        int txf = !strncmp(mn, "TXFFLOOR", 8), txg = !strncmp(mn, "TXGFLOOR", 8);
+        int n = mat_bank(mn);
+        if ((txf || txg) && n >= 1 && n <= 8) {
+            if (textured) { sh.kind = SH_RAW; return sh; }   /* TXF unlit; TXG without a shade table */
+            sh.kind = SH_RAMP; sh.base = 16 * (n - 1) + 10; sh.range = 10; sh.smooth = txg;
+            if (txg) { sh.ka = .35f; sh.kd = .30f; sh.ks = .99f; } else { sh.ka = .15f; sh.kd = .45f; sh.ks = .15f; }
+            return sh;
+        }
+        if ((!strncmp(mn, "GFLOOR", 6) || !strncmp(mn, "FFLOOR", 6)) && n >= 1 && n <= 8) {
+            /* material.mat: ka .2, kd 1.2, ks 1.96, which wrap in the 16 bit fraction to .2 / .96 (guess) */
+            sh.kind = SH_RAMP; sh.base = 16 * (n - 1) + 10; sh.range = 10; sh.smooth = mn[0] == 'G';
+            sh.ka = .2f; sh.kd = .2f; sh.ks = .96f;
+            return sh;
+        }
+        if (!strcmp(mn, "FLOOR_COLOUR") && g_arena.detail < 2) { sh.kind = SH_FLAT; sh.base = 0x20; return sh; }
+        if (!strcmp(mn, "LASER")) { sh.kind = SH_FLAT; sh.base = 100; return sh; }
+        return sh;
+    }
+    /* fighters (0x41c6c0): mode = texture * 2 | gouraud picks ka / kd / ks (0x4a4508) */
+    static const float K[4][3] = { { .3f, .3f, .5f }, { .3f, .3f, .5f }, { .4f, .3f, .5f }, { .5f, .2f, .1f } };
+    int tex = (g_draw_mode & DM_TEX) != 0, gour = (g_draw_mode & DM_SMOOTH) != 0;
+    int tx = mn[0] == 'T' && mn[1] == 'X', n = mat_bank(mn);
+    const char *b = tx ? mn + 2 : mn;                 /* BANKn / FBANKn (2ANK / 2BANK: player 2 copies) */
+    int fb = b[0] == 'F';
+    if (!strstr(b, "ANK") || n < 1 || n > 8) return sh;
+    const float *k = K[tex * 2 + gour];
+    sh.ka = k[0]; sh.kd = k[1]; sh.ks = k[2];
+    sh.smooth = gour && !fb;                          /* flags |= 5 only on TXBANK / BANK 1-8 */
+    if (tx && textured) { sh.kind = gour && !fb ? SH_TEXLIT : SH_RAW; return sh; }
+    sh.kind = SH_RAMP; sh.base = 10 + 16 * (n - 1); sh.range = 15;
+    return sh;
+}
+
+/* l for a model-space normal n (any length), with the normal matrix nm (eye space) */
+static float shade_l(const Shade *sh, const float nm[9], const float n[3])
+{
+    float e[3] = { nm[0] * n[0] + nm[3] * n[1] + nm[6] * n[2], nm[1] * n[0] + nm[4] * n[1] + nm[7] * n[2],
+                   nm[2] * n[0] + nm[5] * n[1] + nm[8] * n[2] };
+    float len = sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+    if (len <= 0) return sh->ka;
+    e[0] /= len; e[1] /= len; e[2] /= len;
+    const float *L = g_light_eye;
+    float l = sh->ka, d = g_light_s * (e[0] * L[0] + e[1] * L[1] + e[2] * L[2]);
+    if (d > 0) {
+        l += sh->kd * d;
+        if (sh->ks != 0) {
+            float H[3] = { L[0], L[1], L[2] + 1 };        /* eye = (0, 0, 1) in eye space */
+            float hl = sqrtf(H[0] * H[0] + H[1] * H[1] + H[2] * H[2]);
+            float h = hl > 0 ? (e[0] * H[0] + e[1] * H[1] + e[2] * H[2]) / hl : 0;
+            if (h > 0.6172f) l += h * sh->ks * g_light_s / (sh->pw - sh->pw * h + h);
+        }
+    }
+    if (l < 0) l = 0;
+    if (l > 1 - 1 / 65536.f) l = 1 - 1 / 65536.f;
+    return l;
+}
+
+static void shade_color(const Shade *sh, float l)
+{
+    if (sh->kind == SH_TEXLIT) {
+        float g = floorf(0.5f + 63.f * l) / 48.f;
+        if (g > 1) g = 1;
+        glColor3f(g, g, g);
+    } else if (sh->kind == SH_RAMP && g_cur_pal) {
+        Rgb c = g_cur_pal[(int)floorf((float)sh->base + 0.5f + (float)sh->range * l) & 255];
+        glColor3ub(c.r, c.g, c.b);
+    }
+}
 
 static void draw_model(const Model *m, GLuint tex, int tile)
 {
     const float in = 0.5f / 64.0f;
     float tu = (float)(tile & 3), tv = (float)((tile >> 2) & 3);
     static float (*vn)[3]; static int vn_cap;          /* Gouraud: vertex normals, face normals averaged */
-    int smooth = (g_draw_mode & DM_SMOOTH) && m->nverts > 0;
+    int smooth = m->nverts > 0;
     if (smooth) {
         if (vn_cap < m->nverts) { free(vn); vn_cap = m->nverts; vn = calloc((size_t)vn_cap, sizeof *vn); }
         if (!vn) smooth = 0;
@@ -351,19 +492,30 @@ static void draw_model(const Model *m, GLuint tex, int tile)
             for (int k = 0; k < 3; k++) for (int c = 0; c < 3; c++) vn[f->v[k]][c] += n[c];
         }
     }
+    GLfloat mv[16], nm[9];                             /* the model's normal matrix (rotation part, eye space) */
+    glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+    for (int c = 0; c < 3; c++) for (int r = 0; r < 3; r++) nm[c * 3 + r] = mv[c * 4 + r];
+    int gl_on = 1;
     for (int i = 0; i < m->nfaces; i++) {
         const Face *f = &m->faces[i];
         if (f->v[0] >= m->nverts || f->v[1] >= m->nverts || f->v[2] >= m->nverts) continue;
-        const char *mn = (f->mat && f->mat <= m->nmats) ? m->mats[f->mat - 1] : "";
+        static char empty[32];
+        const char *mn = (f->mat && f->mat <= m->nmats) ? m->mats[f->mat - 1] : empty;
         int textured = (mn[0] == 'T' && mn[1] == 'X' && m->uvs && tex && (g_draw_mode & DM_TEX));
-        const Material *mat = material_find(g_mats, g_nmats, mn);
+        Shade sh = shade_of(mn, textured);
+        if (sh.kind == SH_RAMP || sh.kind == SH_FLAT) textured = 0;
+        int want_gl = sh.kind == SH_GL;
+        if (want_gl != gl_on) { if (want_gl) glEnable(GL_LIGHTING); else glDisable(GL_LIGHTING); gl_on = want_gl; }
         if (textured) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, tex);
             glColor3f(1, 1, 1);
         } else {
             glDisable(GL_TEXTURE_2D);
-            if (mat && g_cur_pal && mat->index_range) {
+            const Material *mat = material_find(g_mats, g_nmats, mn);
+            if (sh.kind == SH_FLAT && g_cur_pal) { Rgb c = g_cur_pal[sh.base & 255]; glColor3ub(c.r, c.g, c.b); }
+            else if (sh.kind != SH_GL) { }
+            else if (mat && g_cur_pal && mat->index_range) {
                 int idx = mat->index_base + (mat->index_range * 3) / 4;
                 Rgb c = g_cur_pal[idx & 255];
                 glColor3ub(c.r, c.g, c.b);
@@ -372,11 +524,14 @@ static void draw_model(const Model *m, GLuint tex, int tile)
         }
         float n[3];
         face_normal(&m->verts[f->v[0]], &m->verts[f->v[1]], &m->verts[f->v[2]], n);
+        int lit = sh.kind == SH_TEXLIT || sh.kind == SH_RAMP, vsm = lit && sh.smooth && smooth;
+        if (lit && !vsm) shade_color(&sh, shade_l(&sh, nm, n));
         glBegin(GL_TRIANGLES);
         glNormal3fv(n);
         for (int k = 0; k < 3; k++) {
             int vi = f->v[k];
-            if (smooth) glNormal3fv(vn[vi]);
+            if (want_gl && smooth && (g_draw_mode & DM_SMOOTH)) glNormal3fv(vn[vi]);
+            if (vsm) shade_color(&sh, shade_l(&sh, nm, vn[vi]));
             if (textured) {
                 float u = m->uvs[vi].u, v = m->uvs[vi].v;
                 if (!(u >= in)) u = in;          /* also catches NaN / garbage values */
@@ -389,6 +544,7 @@ static void draw_model(const Model *m, GLuint tex, int tile)
         }
         glEnd();
     }
+    if (!gl_on) glEnable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
 }
 
@@ -588,12 +744,16 @@ static void gl_look(const float d[3])
 static void draw_background(int w, int h)
 {
     (void)w; (void)h;
-    if (!g_show_bg || !g_arena.bg_tex) return;
+    if (!g_show_bg || !g_arena.bg_tex || !g_cfg.det[6]) return;   /* F6 / detail: background off (0x41d420) */
     float turn = (g_bg_turn - 90.0f) / 360.0f;
     float xo = (turn - floorf(turn)) * 320.0f;
     float pitch = g_cm_pitch_bg;
-    float yo = cosf(pitch / 57.29578f) * 250.0f * 0.5f - 4.5f;      /* rises when looking down */
-    if (yo > 40) yo = 40;
+    /* 0x44556c: t = 250 cos(pitch), taken only when it moved by more than 0.5; v = 0x4f1b5a (178 for every
+     * arena, 0x4a44b0) - trunc(t); 0x41d5b0 translates the band to y = 100 - v / 2 = 11 + trunc(t) / 2 */
+    static float t_h;
+    float t = cosf(pitch / 57.29578f) * 250.0f;
+    if (fabsf(t - t_h) > 0.5f) t_h = t;
+    float yo = 100.0f - (178.0f - truncf(t_h)) * 0.5f;              /* rises when looking down */
     glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
     glDisable(GL_DEPTH_TEST); glDisable(GL_LIGHTING); glDepthMask(GL_FALSE);
     glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D, g_arena.bg_tex);
@@ -650,7 +810,7 @@ static void render(int w, int h)
     if (g_state == ST_VIDEO) { video_draw(w, h); return; }
     if (g_state == ST_CREDITS) { credits_draw(w, h); return; }
     glViewport(0, 0, w, h);
-    glClearColor(0.02f, 0.02f, 0.06f, 1);
+    glClearColor(0, 0, 0, 1);                       /* black above the horizon (0x41d420) */
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (!g_game) draw_background_flat(w, h);
 
@@ -679,9 +839,35 @@ static void render(int w, int h)
     glLightfv(GL_LIGHT0, GL_POSITION, lp);
     glLightfv(GL_LIGHT0, GL_AMBIENT, amb);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, dif);
+    {   /* the fight light (0x42f6fd): world +Z in eye space, strength 1 / attenuation_c (0x4a4470[arena]) */
+        GLfloat mv[16]; glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+        float l = sqrtf(mv[8] * mv[8] + mv[9] * mv[9] + mv[10] * mv[10]);
+        if (l > 0) { g_light_eye[0] = mv[8] / l; g_light_eye[1] = mv[9] / l; g_light_eye[2] = mv[10] / l; }
+        float att = (g_arena.id == 0 || g_arena.id == 8 || g_arena.id == 9) ? -0.6f : 0.9f;
+        const uint8_t *e = g_fe_ok && g_arena.id >= 0 && g_arena.id < 12 ? exe_ptr(&g_fe.exe, 0x4a4470u + 4u * (uint32_t)g_arena.id, 4) : NULL;
+        if (e) { float v; memcpy(&v, e, 4); if (v != 0 && fabsf(v) < 100) att = v; }
+        g_light_s = 1.0f / att;
+    }
 
     g_cur_pal = g_arena.pal;
-    for (int i = 0; i < g_arena.nparts; i++) draw_model(&g_arena.parts[i], g_arena.floor_tex, i);
+    if (!g_arena.detail || !g_cfg.det[6]) {      /* 0x41d420: the floor colour below the horizon */
+        Rgb c = g_arena.pal[0x20];
+        float z = g_arena.detail ? g_arena.fi.fall_depth - 0.05f : 0.0f, e = 400.0f;
+        glDisable(GL_LIGHTING); glColor3ub(c.r, c.g, c.b);
+        glBegin(GL_QUADS); glVertex3f(-e, -e, z); glVertex3f(e, -e, z); glVertex3f(e, e, z); glVertex3f(-e, e, z); glEnd();
+        glEnable(GL_LIGHTING);
+    }
+    g_draw_mode = (g_cfg.det[4] ? DM_TEX : 0) | DM_SMOOTH;   /* floor texture off / textured / perspective */
+    g_floor_pass = 1;
+    for (int i = 0; i < g_arena.nparts; i++) {
+        glPushMatrix(); floor_anim_apply(&g_arena, i);
+        int wire = g_arena.id == 11 && !strcmp(g_arena.parts[i].name, "J");   /* render_style EDGES (0x41bfd0) */
+        if (wire) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        draw_model(&g_arena.parts[i], g_arena.floor_tex, i);
+        if (wire) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glPopMatrix();
+    }
+    g_floor_pass = 0;
     Pose p0 = g_game ? game_pose(0) : viewer_pose(&g_f[0], -1);
     Pose p1 = g_game ? game_pose(1) : viewer_pose(&g_f[1], +1);
     draw_shadow(p0); draw_shadow(p1);
@@ -748,7 +934,7 @@ static void restart_fight(void)
     fight_set_arena(&g_fight, &g_arena.fi);
     g_fight.land_half = g_arena.land_half;
     g_fight.ringouts = g_ringouts;
-    fight_reset(&g_fight);
+    fight_reset(&g_fight); floor_anim_reset(&g_arena);
     g_yaw_ofs = 0;
     music_play(g_arena.id + 2);                 /* FIGHT.EXE: CD track = arena + 2 */
     sfx_bank_load(0, g_tour ? "tour" : "generic");   /* 0x413a6d: tour.fxl = generic + the fighter names */
@@ -1135,7 +1321,7 @@ static void camera_step(int snap)
     }
     /* ring edge (FUN_004221b2): a fighter within 1.8 of the edge and the two closer than 4.0:
      * the camera swings by 12 * (3.5 - gap) degrees and drops to 83 - 8 * (3.5 - gap) */
-    if (!mc && !g_cm_preset && !g_fight.p[0].ringout && !g_fight.p[1].ringout && !snap) {
+    if (!mc && !g_cm_preset && !g_fight.p[0].ringout && !g_fight.p[1].ringout && !snap && !g_fight.no_floor) {
         float lim = g_fight.ring_half - 1.8f;
         int e = 0;
         if (fabsf(q0->tx) > lim || fabsf(q0->ty) > lim) e |= 1;          /* followed pelvis positions (a8320 / a8330) */
@@ -1764,7 +1950,7 @@ static void after_match(void)
 {
     if (g_debug_fight) {                            /* command line fight: keep going */
         g_fight.p[0].wins = g_fight.p[1].wins = 0; g_round = 1;
-        fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1);
+        fight_reset(&g_fight); floor_anim_reset(&g_arena); g_yaw_ofs = 0; camera_step(1);
         return;
     }
     if (g_endu && g_fight.winner >= 0) {          /* status 5/6 "WINS endurance" (0x413e24, data 0x41970d) */
@@ -1841,6 +2027,7 @@ static void challenger_join(void)
 
 static void match_tick(void)
 {
+    if (!g_fight_paused) floor_anim_tick(&g_arena);
     {   /* tests: FX_CHALLENGE=<s> joins after s seconds of ladder fight time */
         const char *e = getenv("FX_CHALLENGE");
         if (e && challenger_ok() && g_ladder_time >= atof(e)) { challenger_join(); return; }
@@ -1851,7 +2038,7 @@ static void match_tick(void)
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
         int need = g_fe_mode == 0 ? 1 : g_cfg.rounds / 2 + 1;   /* attract demo: one round */
         if (g_fight.p[0].wins >= need || g_fight.p[1].wins >= need) g_match_over_t = 3 * FIGHT_HZ;
-        else { g_round++; fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1); }
+        else { g_round++; fight_reset(&g_fight); floor_anim_reset(&g_arena); g_yaw_ofs = 0; camera_step(1); }
     }
 }
 
@@ -2557,10 +2744,10 @@ int main(int argc, char **argv)
                 else if (k == SDLK_p || k == SDLK_PAUSE) g_fight_paused = !g_fight_paused;
                 else if (k == SDLK_x) sfx_toggle();
                 else if (!g_debug_fight && k >= SDLK_F1 && k <= SDLK_F6) {   /* 0x4414c7: detail keys in a fight */
-                    static const int SLOT[6] = { 0, 2, 1, 3, 5, 6 };       /* F1/F2 texture, F3/F4 shading P1/P2 */
+                    static const int SLOT[6] = { 0, 2, 1, 3, 4, 6 };       /* F1/F2 texture, F3/F4 shading P1/P2 */
                     int d = SLOT[k - SDLK_F1];
-                    if (d == 5) g_cfg.det[5] = (g_cfg.det[5] + 1) % 3;      /* floor detail lo / med / hi */
-                    else g_cfg.det[d] ^= 1;
+                    if (d == 4) g_cfg.det[4] = (g_cfg.det[4] + 1) % 3;      /* F5: floor texture off / tx / per */
+                    else g_cfg.det[d] ^= 1;                                  /* F6: background on / off */
                 }
                 else if (k == SDLK_F1) { g_game = !g_game; if (g_game) { g_yaw = -1.5708f; g_pitch = 0.28f; g_dist = 3.6f; } }
                 else if (k == SDLK_n) {

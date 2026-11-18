@@ -65,6 +65,10 @@ typedef struct {
     float jump_v, jump_g, jump_s;   /* 0x6c 0x70 0x74 jump arc               */
     float body_r[6];         /* 0x78  body radius per move class             */
     float part_r[16];        /* 0x88  hit cube half-size per body part (/256) */
+    /* arenas (fi n = arena n): floor part animation slots 0..17 for 0x428f0a */
+    uint8_t fa_type[18];     /* 0xa0  bit 0x80: stop at the limit; low 7 bits: 1 move x, 2 z, 3/4/5 turn x/y/z, else y */
+    float fa_speed[18];      /* 0xb4  per tick (units, or degrees for the turns) */
+    float fa_limit[18];      /* 0xfc  |accumulated| >= |limit|: back to the start */
 } FighterInfo;
 
 int fighter_info_load(FighterInfo *fi, const uint8_t *cmp, size_t size);
@@ -138,6 +142,7 @@ typedef struct {
                             * clock runs in real time, one round_timer step per 24850 PIT ticks */
     int    clock_acc;
     int    ring_guard;     /* port option: a human player's own moves do not take him out of the ring */
+    int    no_floor;       /* floor detail 0 (0x4a5888): no ring-outs, no ring-edge limits, gap clamped to 8 */
     int    input_buffer;   /* port option: a human's punch / kick press stays valid this many ticks (0 = original) */
     int    handicap[2];    /* two humans: damage factor index 0..7 = x0.7 .. x1.4 (0x4a5878, 3 = x1.0) */
     int    name_snd[2];    /* >0: the round winner is called by name, bank 0 index (tour.fxl, 0x42263c) */

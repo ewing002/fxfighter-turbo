@@ -229,8 +229,20 @@ Lejátszás (`FUN_00435eb4(bank, index)`): a mozdulat 0x18-as mezője a `StartMo
 < 0x80: a játékos saját bankja (1-alapú), 0x80–0xEF: az arénabank (0-alapú), ≥ 0xF0: nincs hang.
 A találati hangokat a reakciómozdulatok saját hangmezője adja (pl. HIT FACE L = 1 = `mag_l5`).
 
-### `sfx/*.slb`
-Hangeffekt-paraméterbankok (float mezők; feltehetően térhatás/hangerő). A port egyelőre nem használja.
+### `*.slb` – sprite-effektkönyvtárak ❌
+Nem hangparaméterek: látványeffektek (`Sprlib.c`, `Sprplay.c`; a „sfx” itt special effects). Fejléc: `u32 verzió = 1,
+u32 npix`, aztán három tömb (`u32 darab, u32 elemméret`): parancsok (0x24 bájt, az effekt szkriptje), kibocsátók (0x44
+bájt, részecskék) és effektbejegyzések (0x20 bájt: `u32 azonosító 0..255, u32 első parancs, char név[24]`), végül
+`npix` BRender-pixelmap (0x18 bájtos fej, 8 bites indexelt, PackBits-változat `0x42e5c9`). Értelmező: `0x44d868`
+(1 képkocka mutatása, 2 ugrás, 3 vége, 4 kibocsátó egy csontcsoporthoz, 5 gyereksprite). Betöltés: `0x433350`
+(25 elemű tábla `0x4a6b10`, játékosonkénti azonosítótábla `0x4bd9a8`, keresés `0x433630`). Tartalom: generic
+Block 1–4, harcosonként Blood 1–4 és a saját lövedék-, töltés- és találateffektek, arénák lépés/landolás/fröccsenés,
+teleport. A port még nem rajzolja őket.
+
+Hanglejátszás (`Windsoun.c`): nincs térhatás. A `0x435eb4(bank, index)` pozíciót nem kap, SetPan csak 0, SetFrequency
+nincs, ismétlés nincs. 8 körbeforgó puffer (22 500 Hz-en, kb. 2 %-kal magasabban), a hosszú hangoknak egy külön
+puffer (22 050 Hz), a `+` hangoknak 2 (44 100 Hz). Hangerő csak a főhangerő; az egyetlen kivétel a visszaszámláló
+sípolása (`0x422399`), amely 0 dB-es főhangerőnél nem változik.
 
 ### Zene
 - Zene: CD-audio sávok (MCI, `FUN_0043adf8`). Harc közben az `aréna + 2`-es sáv szól (`FUN_0043b077(a8308 + 2)`), a stáblistánál a 2-es, demó módban a 14-es.
@@ -263,4 +275,21 @@ a létra végén WIN (`0x413f2d`), 1P game over után LOSE (`0x413e9d`, Rygillel
 ## Egyéb
 - `FIGHT/VIDEO/*.CLT/*.PAL/*.BRP`: FMV-k (Argonaut-formátum), ❌
 - `boutgfx/*.pix`: HUD-grafikák (FIGHT, KO, ROUND, …), BRender pixmapok, ✅ olvashatók
-- `boutgfx/colmap.tab`, `frontend/shade.tab`: árnyalótáblák a 8 bites rendereléshez (a modern portnak nem kellenek)
+- `boutgfx/colmap.tab`: 64 sor × 256 oszlopos árnyalótábla (BRender-pixelmap „shade_table”); a 48. sor a 10..137
+  indexeket változatlanul adja, alatta a fekete (0x0A) felé sötétedik (≈ sor/48), fölötte a 137-es szín felé fehéredik.
+- `frontend/shade.tab`: a menü árnyalótáblája.
+
+### Színezés (BRender-indexvilágítás)
+A renderelő nem a `FIGHT.EXE`-ben van, hanem a BRender 1.2 meghajtókban (`DLL\SOFTRNDX.BDD`, `SOFTPRIM.BDD`,
+`SOFTIZ.BDD`). A harc egyetlen fénye (`0x42f6fd`) irányfény a világ +Z felől (felülről), erőssége 1/c, ahol c
+a `0x4a4470[aréna]` táblából jön: 0,9, a 0., 8. és 9. arénában −0,6 (ott a fény gyakorlatilag alulról jön).
+Környezeti fény nincs, csak az anyag ka-ja. Csúcspontonként (Gouraud) vagy lapon­ként:
+`l = ka + (d > 0 ? kd·d + spec : 0)`, `d = s·(n·L)`, `spec = h > 0,6172 ? h·ks·s / (p − p·h + h) : 0`,
+`h = n·normalize(L + szem)`, `l` a [0, 1) tartományba vágva. Textúra nélkül: `paletta[base + 0,5 + range·l]`;
+megvilágított textúrával: `colmap[0,5 + 63·l][texel]`; világítás nélküli textúrával a nyers texel.
+Harcosanyagok (`0x41c6c0`): mód = textúra·2 | Gouraud, ka/kd/ks a `0x4a4508` táblából (lapos: .3/.3/.5, lapos
+textúrás: .4/.3/.5, Gouraud-textúrás: .5/.2/.1, p = 20). Textúrás módban a TX anyagok világítás nélküliek, Gouraud
+esetén a TXBANK1–8 és BANK1–8 megvilágított és simított (a TXFBANK/FBANK mindig lapos); textúra nélkül minden anyag
+a bankja rámpája (10 + 16(n−1), 15 lépés). Padló (`0x41cdcd`): textúrával a TXF/TXGFLOOR nyers texel; nélküle
+TXGFLOOR .35/.30/.99 simított, TXFFLOOR .15/.45/.15 lapos, 10 lépéses rámpa. A port ezt CPU-n számolja (az
+OpenGL-világítás ki van kapcsolva); a megvilágított textúrát `min(sor/48, 1)` szürkével modulálja.

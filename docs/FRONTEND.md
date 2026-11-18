@@ -132,10 +132,22 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      (`Fight.tick_pit`) így állítja; a beállítás az `options.cfg`-be kerül (`speed`). Az EC egy visszajelző hangot
      is lejátszik (`0x4ab058[speed]`), ez nincs bekötve;
    - részletesség (DETAIL, G27–33 → `0x4a5883–89`): P1 textúra, P1 árnyalás, P2 textúra, P2 árnyalás, padlótextúra
-     (fltxper), padló-részletesség (lomedhi, 0–2), és egy hetedik bájt. A harcos rajzolási módja (`0x402004`, a debug-szöveg
-     „TYPE: FLAT / GOURARD [TEXTURED]”) a textúra és az árnyalás kapcsolóiból jön; a port ezt követi (textúra helyett az
-     anyagszín, sík helyett Gouraud-árnyalás csúcsnormálisokkal). Harc közben F1–F6 kapcsolja őket (`0x4414c7`, DI
-     0x3B–0x40). A két padló-beállítás a portban csak tárolódik (`options.cfg`: `detail1..7`);
+     (fltxper, 0–2), padló-részletesség (lomedhi, 0–2) és a háttér (be/ki). A harcos rajzolási módja (`0x402004`, a
+     debug-szöveg „TYPE: FLAT / GOURARD [TEXTURED]”) a textúra és az árnyalás kapcsolóiból jön; a port ezt követi
+     (textúra helyett az anyagszín, sík helyett Gouraud-árnyalás csúcsnormálisokkal). Harc közben (`0x4414c7`, DI
+     0x3B–0x40) F1–F4 a harcosokét kapcsolja, F5 a padlótextúrát lépteti 0→1→2, F6 a hátteret kapcsolja; a
+     padló-részletességnek nincs gombja, az aréna betöltésekor hat. A port mindhármat követi (`options.cfg`:
+     `detail5..7`):
+     - padlótextúra (`0x4a5887`, anyagfrissítés `0x41c6c0`): 0 = textúra nélkül, a TXGFLOOR n / TXFFLOOR n anyag a
+       paletta 16(n−1)+10-től induló 10 elemű rámpájából kap színt (TXG simított és megvilágított, TXF sík); 1 és 2 =
+       textúrázott, a TXF világítás nélkül (teljes fényerő), a TXG megvilágítva. Az 1 és a 2 csak az affin és a
+       perspektivikus leképezésben különbözik, OpenGL alatt egyformák;
+     - padló-részletesség (`0x4a5888`, betöltő `0x41bfd0`): 0 = nincs padlómodell, a látóhatár alatt a padlószín
+       (paletta 0x20); ilyenkor a játékmenet is más: nincs ringből kiesés, nincs ringhatár (`0x4408f9`), a ringszéli
+       kamera sem indul (`0x4221b2`), és a két harcos távolsága legfeljebb 8,0 (`0x43fbca`). 1 = `floor_m%x.dat`
+       (minden arénában ugyanaz a sima gyűrű, a külső sík FLOOR_COLOUR = világítás nélküli paletta 0x20), 2 =
+       `floor_h%x.dat`, a teljes díszlet;
+     - háttér (`0x4a5889`): 0 = nincs panoráma, a látóhatár fölött fekete (`0x41d420`);
    - visszatérés a meccs után (`ProcessWrapperReturns`, `0x413d3d`, státusz → G58): bemutató vége (0), Esc (0), 1P game
      over (10 → 0), létra vége (11 → 2, névbeírás), endurance vége (5/6 → 7: WINNER / LOSER képernyő; G59/G60 a győztes
      és a vesztes harcosa, G61/G62 az oldaluk, `0x41970d`), torna (13 → 6), 2P meccs (22 → 4, a 2P választó). Nincs a

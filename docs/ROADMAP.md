@@ -37,21 +37,26 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 4. ✅ **HUD és menük**: `boutgfx/*.pix` sprite-ok (az aréna palettájával), `frontend/align.pix` (saját palettás, fejjel lefelé tárolt képek), `back1.pix`,
    betöltőkép, főmenü, karakter- és arénaválasztó, VS, 3 körös meccs, 1 játékos létra · ⏳ opciók menü (BESTO1..7, idő, nehézség, irányítás),
    folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla (✅ a 3D menüben)
-5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó · ⏳ `.slb` paraméterek (térhatás), menühangok
+5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó, menühangok. Az eredeti nem használ térhatást (nincs
+   pan, hangmagasság vagy távolság szerinti halkítás); a `.slb` fájlok nem hangparaméterek, hanem sprite-effektkönyvtárak
+   (⏳ blokk-szikrák, vér, lövedékek, teleport: `Sprlib.c` / `Sprplay.c`, lásd `docs/FORMATS.md`)
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
-   ⏳ a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)
+   a `0x424d8f` ringszél-vizsgálat is az eredeti szerint (a követett medencétől 2 egységre: balra, jobbra vagy hátra)
 7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó (✅ `src/video.c`).
 
 ## Ismert hibák
 - ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).
-- A sima színű lapok egy fix árnyalatot kapnak a bankból (¾-es fényerő) + OpenGL-világítást. Az eredeti a `colmap.tab` árnyalótáblával számolt, ezt pontosabban is lehetne emulálni.
-- A háttér az eredeti `bground.dat` elrendezését követi; a függőleges eltolás egyik futásidejű értékét (0x4f1b5a) becsültem.
+- A színezés az eredeti BRender-indexvilágítás (egy felülről jövő fény, aréna szerinti erősség, a 0., 8. és 9. arénában
+  alulról), CPU-n számolva. Eltérés: a megvilágított textúrák a `colmap` sorának fényerejével modulálódnak, így a 48 fölötti
+  sorok kifehéredése (csillanás) hiányzik, és a textúrázás perspektivikus (az eredetiben affin).
+- A háttér az eredeti `bground.dat` elrendezését követi; a függőleges helyzete az eredeti képlete (`0x44556c`, `0x41d5b0`):
+  y = 11 + trunc(250·cos(dőlés))/2, a `0x4f1b5a` = 178 minden arénában.
 - A kamera a mozdulatok kamera-előbeállításait, a ring szélén használt nézetet és a rögzített nézeteket az eredeti szerint kezeli. A saját sebzésre (op 100–149) a kamera függőlegesen megrázkódik (0,1 amplitúdó, tickenként 45°, 0,008-cal csillapodik).
   A „SAT CAM / CAR CAM / SIDE CAM” BRender-kamerák (`0x4a1e38`) halott adatok, semmi nem hivatkozik rájuk.
 - Az ugrás íve most az eredeti képlet (FUN_00440f42: (t·v + t²·g/2)·s + 0,3), kb. 1,4 m magas. A talajhoz igazítás a modellek legalsó csúcspontját használja, így a talp a padlón áll.
 - Ugrás közben a harcos nem jut ki a ringből (saját döntés); ütés, dobás vagy kilépés után továbbra is ki lehet esni.
 - A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.
-- A kábulás (`f1a48 = 0x17f`, valószínűleg csillag-effekt vagy hang) látványeleme még hiányzik, csak a mechanika van meg.
+- A kábulásnak nincs külön látványeleme: a `0x4f1a48 = 0x17f` (`0x449148`) írás halott, semmi nem olvassa; a látható rész a DAZE mozdulat, ez a portban is megvan.
 - A portrék és a harcosok összerendelése a `frontend/demo.mat` anyagaiból jön (pl. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
 - A menük az eredeti 3D jelenetek, az eredeti szkriptekkel (`docs/FRONTEND.md`); a régi 2D-s menük kikerültek.
 - Jerzan (fm12.dat, `pan_cr12`) az eredetiben félbehagyott: a létratáblájában nem szerepel, a teste pontnyira zsugorított, az animációja Magnoné. A portban rejtett harcos (bővítés): Magnon testrészeivel és Jerzan textúrájával jelenik meg, a választóban Magnonon rúgás + ütéssel választható.

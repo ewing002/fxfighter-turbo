@@ -72,6 +72,10 @@ int fighter_info_load(FighterInfo *fi, const uint8_t *src, size_t n)
     fi->jump_v = rdf32le(d + 0x6c); fi->jump_g = rdf32le(d + 0x70); fi->jump_s = rdf32le(d + 0x74);
     for (int k = 0; k < 6; k++) fi->body_r[k] = rdf32le(d + 0x78 + 4 * k);
     for (int k = 0; k < 16; k++) fi->part_r[k] = (float)d[0x88 + k] / 256.0f;
+    if (usz >= 0x144)
+        for (int j = 0; j < 18; j++) {
+            fi->fa_type[j] = d[0xa0 + j]; fi->fa_speed[j] = rdf32le(d + 0xb4 + 4 * j); fi->fa_limit[j] = rdf32le(d + 0xfc + 4 * j);
+        }
     free(d);
     return 1;
 }
@@ -624,16 +628,20 @@ static int ai_weight(unsigned sit, unsigned mask, int lv)
     return w ? w : 1;
 }
 
-/* 0x424d8f: would the point 2 units behind the fighter be outside the ring.
- * The decompiled code lost the offsets; behind (away from the opponent) is assumed. */
+/* 0x424d8f(kind, i): is the point 2 units from the fighter's followed pelvis position (a8330 / a8320) outside
+ * the ring square (|x| > R || |y| > R, R = fi 0x54). fd = the direction toward the opponent along the line
+ * (gap 0 counts as the minus side). kind 1: 2 units to the left of fd, 2: to the right, 3: 2 units behind
+ * (away from the opponent), 0: never (situation bit 0x80 is always 0). */
 static int ai_edge(const Fight *f, int i, int kind)
 {
     if (!kind) return 0;
-    float x, y, ux, uy;
-    floor_pos(f, i, &x, &y);
+    float ux, uy;
     fight_line_dir(f, &ux, &uy);
-    float back = gap(f, i) >= 0 ? -2.f : 2.f;
-    x += ux * back; y += uy * back;
+    float sg = gap(f, i) > 0 ? 1.f : -1.f, fx = ux * sg, fy = uy * sg;
+    float x = f->p[i].tx, y = f->p[i].ty;
+    if (kind == 1) { x -= 2.f * fy; y += 2.f * fx; }
+    else if (kind == 2) { x += 2.f * fy; y -= 2.f * fx; }
+    else { x -= 2.f * fx; y -= 2.f * fy; }
     return fabsf(x) > f->ring_half || fabsf(y) > f->ring_half;
 }
 
@@ -895,6 +903,10 @@ static void spacing(Fight *f)
         }
         if (f->last_gap != 0) g = f->last_gap;    /* a8264 keeps the side from before the contact */
     }
+    if (f->no_floor) {                            /* floor detail 0: the gap is held at 8.0 (0x496a48) */
+        float d = b->s - a->s, ex = fabsf(d) - 8.0f;
+        if (ex > 0) { float h = d > 0 ? ex * 0.5f : -ex * 0.5f; a->s += h; b->s -= h; }
+    }
     f->last_gap = g;
 }
 
@@ -908,6 +920,7 @@ static float outside(const float c[3], float half) { return fmaxf(fabsf(c[0]), f
 static void ring_edge(Fight *f, int i)
 {
     Player *p = &f->p[i];
+    if (f->no_floor) return;                          /* 0x4408f9 runs only with a floor model */
     if (p->ringout || (cur_move(p)->stance & 0x3f) == 8) return;
     float W = f->ring_half + 1.3f;
     float margin = (f->p[i ^ 1].pelvis_out || (p->edge_guard && !f->ringouts)) ? 1.8f : 0.5f;
@@ -978,6 +991,7 @@ static void ring_out_check(Fight *f, int i, int farther)
 {
     Player *p = &f->p[i];
     if (p->ringout) return;
+    if (f->no_floor) { p->floor_h = 0; return; }    /* floor detail 0: cb498 = 0, nobody falls out */
     float pel[3], lf[3], rf[3];
     fight_joint(f, i, 7, pel); fight_joint(f, i, 1, lf); fight_joint(f, i, 9, rf);
     float h = f->ring_half;
