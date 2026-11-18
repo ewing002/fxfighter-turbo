@@ -708,6 +708,16 @@ static void keys_apply(void)
 }
 
 /* a key of a human fighter: the fight hotkeys leave it alone */
+/* presses since the last fight tick, per player, bit j = key slot j (left, right, up, down,
+ * punch, kick): a tap that starts and ends between two ticks still counts for one tick */
+static unsigned g_tap[2];
+
+static void tap_key(SDL_Scancode sc)
+{
+    for (int p = 0; p < 2; p++)
+        for (int j = 0; j < 6; j++) if (sc && g_key_sc[p][j] == sc) g_tap[p] |= 1u << j;
+}
+
 static int key_bound(SDL_Scancode sc)
 {
     for (int p = 0; p < 2; p++)
@@ -725,16 +735,19 @@ static void read_input(void)
     float screen_right_u = cosf(g_view_yaw) * ux - sinf(g_view_yaw) * uy;   /* screen right . line dir */
     for (int i = 0; i < 2; i++) {
         Player *p = &g_fight.p[i];
-        if (p->cpu) continue;
-        unsigned in = 0;
-        int right = ks[keys[i][1]] ? 1 : 0, left = ks[keys[i][0]] ? 1 : 0;
+        if (p->cpu) { g_tap[i] = 0; continue; }
+        unsigned in = 0, tap = g_tap[i];
+        g_tap[i] = 0;
+        int down[6];
+        for (int j = 0; j < 6; j++) down[j] = ks[keys[i][j]] || ((tap >> j) & 1);
+        int right = down[1], left = down[0];
         float dir = (float)(right - left) * (screen_right_u >= 0 ? 1.f : -1.f);   /* along the fight line */
         if (dir * (float)p->face > 0) in |= IN_FWD;
         if (dir * (float)p->face < 0) in |= IN_BACK;
-        if (ks[keys[i][2]]) in |= IN_UP;
-        if (ks[keys[i][3]]) in |= IN_DOWN;
-        if (ks[keys[i][4]]) in |= IN_PUNCH;
-        if (ks[keys[i][5]]) in |= IN_KICK;
+        if (down[2]) in |= IN_UP;
+        if (down[3]) in |= IN_DOWN;
+        if (down[4]) in |= IN_PUNCH;
+        if (down[5]) in |= IN_KICK;
         SDL_GameController *gc = g_pad[i];
         if (gc) {                                /* game controller: d-pad or left stick, X/Y punch, A/B kick */
             int ax = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX);
@@ -799,6 +812,14 @@ static void pad_button(int slot, int button)
 {
     static const SDL_Keycode dir[2][4] = { { SDLK_w, SDLK_s, SDLK_a, SDLK_d }, { SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT } };
     SDL_Keycode ok = slot ? SDLK_k : SDLK_f;
+    if (g_state == ST_FIGHT && slot >= 0 && slot < 2) {   /* fight: remember the press until the next tick */
+        static const struct { int b, bit; } T[] = {
+            { SDL_CONTROLLER_BUTTON_DPAD_LEFT, 0 }, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, 1 }, { SDL_CONTROLLER_BUTTON_DPAD_UP, 2 },
+            { SDL_CONTROLLER_BUTTON_DPAD_DOWN, 3 }, { SDL_CONTROLLER_BUTTON_X, 4 }, { SDL_CONTROLLER_BUTTON_Y, 4 },
+            { SDL_CONTROLLER_BUTTON_LEFTSHOULDER, 4 }, { SDL_CONTROLLER_BUTTON_A, 5 }, { SDL_CONTROLLER_BUTTON_B, 5 },
+            { SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, 5 } };
+        for (size_t t = 0; t < sizeof T / sizeof T[0]; t++) if (T[t].b == button) g_tap[slot] |= 1u << T[t].bit;
+    }
     switch (button) {
     case SDL_CONTROLLER_BUTTON_DPAD_UP:    if (g_state != ST_FIGHT) push_key(dir[slot][0]); break;
     case SDL_CONTROLLER_BUTTON_DPAD_DOWN:  if (g_state != ST_FIGHT) push_key(dir[slot][1]); break;
@@ -1894,7 +1915,7 @@ int main(int argc, char **argv)
                     tour_result(rand() & 1);
                     continue;
                 }
-                if (g_state == ST_FIGHT && g_game && k != SDLK_ESCAPE && key_bound(e.key.keysym.scancode)) continue;
+                if (g_state == ST_FIGHT && g_game && k != SDLK_ESCAPE && key_bound(e.key.keysym.scancode)) { tap_key(e.key.keysym.scancode); continue; }
                 if (g_state == ST_FE3D) {             /* the scripts poll the keys once per tick */
                     SDL_Scancode sc = e.key.keysym.scancode ? e.key.keysym.scancode : SDL_GetScancodeFromKey(k);
                     if ((unsigned)sc < SDL_NUM_SCANCODES) g_fe_latch[sc] = 1;

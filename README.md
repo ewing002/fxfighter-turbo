@@ -61,7 +61,8 @@ Harc közben: egérhúzás = kamera forgatása (a kamera magától követi a har
 Rögzített kameranézetek, mint az eredetiben: **Home** = be/ki, **Insert / Delete** = következő / előző a 8 nézetből, **PgUp / PgDn** = közelebb / távolabb,
 nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb lépések.
 
-A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
+A harc a gombokat tickenként (48/s) olvassa; a két olvasás közé eső rövid nyomást a port megjegyzi, így egy gyors koppintás sem vész el
+(billentyűzet és kontroller). A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
 
 Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
 valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
