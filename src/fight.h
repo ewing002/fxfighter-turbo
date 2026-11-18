@@ -143,6 +143,7 @@ typedef struct {
     int    clock_acc;
     int    ring_guard;     /* port option: a human player's own moves do not take him out of the ring */
     int    no_floor;       /* floor detail 0 (0x4a5888): no ring-outs, no ring-edge limits, gap clamped to 8 */
+    int    thrower;        /* a8344: 1 + the player who started the last throw, 0 = none yet */
     int    input_buffer;   /* port option: a human's punch / kick press stays valid this many ticks (0 = original) */
     int    handicap[2];    /* two humans: damage factor index 0..7 = x0.7 .. x1.4 (0x4a5878, 3 = x1.0) */
     int    name_snd[2];    /* >0: the round winner is called by name, bank 0 index (tour.fxl, 0x42263c) */

@@ -420,6 +420,9 @@ static void process_events(Fight *f, int i)
                 start_move_t(f, i ^ 1, n->tgt, i);
                 start_move(f, i, r->tgt);
                 o->in_react = 1;                  /* cb4c8 = -1: hits during the throw are combo hits */
+                p->solid = 0;                     /* a8260 = 0: the victim is not pushed away from the thrower
+                                                   * (otherwise a lifted fighter ends up in front, not overhead) */
+                f->thrower = i + 1;               /* a8344 */
                 return;
             }
         } else {
@@ -454,6 +457,7 @@ static void process_events(Fight *f, int i)
             else if (op == 0xe0) p->frame = r->fr;
             else if (op == 0xe8) {                   /* set fighter distance (throws) */
                 float want = (float)((int)r->tgt << 9) / 65536.0f, g = gap(f, i);
+                if (f->thrower == 2) want += 0.1f;    /* the last throw was player 2's (a8344 == 2) */
                 float diff = (want - fabsf(g)) * 0.5f, sg = g >= 0 ? 1.f : -1.f;
                 p->s -= sg * diff; f->p[i ^ 1].s += sg * diff;
             }

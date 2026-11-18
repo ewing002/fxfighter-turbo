@@ -163,7 +163,10 @@ hanem tickenként `0x4a5790[szint]`-et ad a számlálóhoz. A DAZE LOOP 1 és 2 
 Az 1-es és 2-es támadástípus (`stance >> 6`) a teljes harcvonalat elforgatja a támadó körül `−(sebzés << 7)` br_angle-lel.
 A reakció indexe: `(támadástípus>>3) | zóna<<5 | irány | (halálos ? 4 : 0)`, ezzel a 128 elemes `REACT_*` táblákból jön az áldozat következő mozdulata.
 Dobás: a `cond == 8` esemény az áldozatot a **dobó táblájából** indítja (`StartMove(p+2)`); a 0xCB lezáró rekord
-"ugyanaz a játékos, a másik tábla" (`StartMove(p^3)`); a 0xE8 a két harcos távolságát állítja (`target << 9`, 16.16).
+"ugyanaz a játékos, a másik tábla" (`StartMove(p^3)`); a 0xE8 a két harcos távolságát állítja (`target << 9`, 16.16,
++0,1, ha az utolsó dobást a 2. játékos indította: `0x4a8344 == 2`). A dobás indításakor (`0x441c0b`) a dobó nem
+szilárd (`0x4a8260[dobó] = 0`), így a taszítás nem tolja hátra; e nélkül a felemelt harcos a dobó előtt lebeg, nem
+a feje fölött.
 A 0xC9 lezáró rekord akkor sül el, amikor a harcos földet ér.
 
 Életerő: 120. A játék sebessége 48 tick/s (PIT 1193182 / 24850), egy kör 60 másodperc.
