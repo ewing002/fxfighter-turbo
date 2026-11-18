@@ -139,7 +139,8 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - visszatérés a meccs után (`ProcessWrapperReturns`, `0x413d3d`, státusz → G58): bemutató vége (0), Esc (0), 1P game
      over (10 → 0), létra vége (11 → 2, névbeírás), endurance vége (5/6 → 7: WINNER / LOSER képernyő; G59/G60 a győztes
      és a vesztes harcosa, G61/G62 az oldaluk, `0x41970d`), torna (13 → 6), 2P meccs (22 → 4, a 2P választó). Nincs a
-     portban: a hálózat (23 → 5), a létra végi / game over videó (`win.brp`) és a stáblista (`credits.txt`, `0x429800`);
+     portban: a hálózat (23 → 5) és a stáblista (`credits.txt`, `0x429800`); a létra végi (WIN) és a game over (LOSE)
+     videó lefut (`docs/FORMATS.md`, videók);
    - folytatás-képernyő (`continue.c`, `0x4368c0`; részletek: a jegyzetek `continue_notes.md`): elveszett 1P meccs után
      (`0x41aec7`) és minden 2P meccs után (`0x40413a`), a vesztes oldalra; endurance, torna, bemutató nem hívja. Két
      acélajtó (doorl/doorr.cmp, 160×240) zárul be (x += v, v += 1,2 képkockánként, 17 képkocka), aztán „PLAYER n
@@ -171,7 +172,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása, a videók és a stáblista.
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása és a stáblista.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
    `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü

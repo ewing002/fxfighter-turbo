@@ -40,7 +40,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó · ⏳ `.slb` paraméterek (térhatás), menühangok
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
    ⏳ a `0x424d8f` ringszél-vizsgálat pontos eltolása (most: 2 egység a harcos mögött)
-7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó.
+7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó (✅ `src/video.c`).
 
 ## Ismert hibák
 - ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).

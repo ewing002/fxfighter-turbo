@@ -18,7 +18,8 @@ Windows 10/11-en, Linuxon és macOS-en is fordítható.
 - ✅ **Meccsek**: 3 körből 2 nyert kör kell. 1 játékos módban sorban jön a többi 10 harcos, mindig az ellenfél saját arénájában. Vereség = GAME OVER.
 - ✅ **Gépi ellenfél**: az eredeti AI visszafejtve, 8 nehézségi szinttel
 - ✅ **Rekordtábla**: a létra végén az eredeti névbeíró képernyő és táblázat, mentve a `hiscores.dat`-ba
-- ⏳ FMV-k, stáblista: lásd `docs/ROADMAP.md`
+- ✅ **Videók (FMV)**: az eredeti intró és logók, a létra végi és a game over videó, a CD-ről (lásd lent)
+- ⏳ Stáblista: lásd `docs/ROADMAP.md`
 
 ## Futtatás Windows alatt
 Indítsd el a `port\bin-win64\fxfighter.exe`-t. A program magától megtalálja a két szinttel feljebb lévő `FIGHT.PAC`-ot.
@@ -75,6 +76,14 @@ harcban (`--p1 N --p2 N`) a régi gyorsgombok működnek (F1 nézet, F3/F4 gépi
 
 Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
 valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
+
+## Videók
+Az eredeti videók (intró, logók, a létra végi és a game over jelenet) a CD-n vannak. A `tools/rip_video.py` kimásolja őket:
+```
+python3 tools/rip_video.py "cd/FX Fighter Turbo.bin" port/video
+```
+A program a `video/` mappában keresi őket (a program mellett, eggyel feljebb vagy a `FIGHT.PAC` melletti `port/video`, `video`
+mappában). Ha nincsenek meg, a videók kimaradnak. Esc az egész sorozatot átugorja, más gomb csak az aktuális videót.
 
 ## Zene
 A játék eredetileg CD-audio sávokat játszott le. A `tools/rip_cd.py` a CD-képből (BIN + CUE) MP3-at készít:

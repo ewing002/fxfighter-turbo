@@ -11,3 +11,8 @@ fs
 fs.exe
 *.o
 *.ppm
+*.brp
+*.BRP
+*.clt
+*.CLT
+video/

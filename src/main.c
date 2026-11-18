@@ -33,6 +33,7 @@
 #include "fe3d_vm.h"
 #include "audio.h"
 #include "ui.h"
+#include "video.h"
 
 #define MAX_PARTS 32
 #define MAX_MATS  256
@@ -79,7 +80,7 @@ static float g_bg_turn = 90, g_cm_pitch_bg = 88;
 #define CAM_ASPECT 1.46f
 
 /* ---- front end / match state ---- */
-enum { ST_FIGHT, ST_FE3D };
+enum { ST_FIGHT, ST_FE3D, ST_VIDEO };
 static int  g_state = ST_FE3D, g_state_t;      /* 3D menus or a fight; ticks spent in it */
 static int  g_two_players;                      /* match type: 0 = 1 player vs CPU ladder, 1 = 2 players */
 static int  g_debug_fight;                      /* started from the command line: endless rounds */
@@ -91,6 +92,8 @@ static struct { int on, side, phase, n_last; float x, v; double left; unsigned p
 static int  g_champ_side = -1, g_champ_streak, g_champ_keep;   /* 2P champion (0x4a1d68 / 0x4a1d6c) */
 static int  g_lad_resume, g_lad_old;            /* 1P continue: keep the ladder (status 20, op ED) */
 static void cont_draw(int w, int h);
+static void play_videos(const char *const *names, int n, void (*done)(void));
+static void video_draw(int w, int h);
 static double g_ladder_time;                    /* 1P ladder: fight time so far in seconds (0x4c7320, real time) */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
@@ -607,6 +610,7 @@ static float    g_fe_alpha = 1;     /* drawing position between the last two VM 
 static void render(int w, int h)
 {
     if (g_state == ST_FE3D) { fe_vm_scene_lerp(&g_vm, &g_fesc, g_fe_alpha); fe_gl_render(&g_fe, &g_fesc, w, h); return; }
+    if (g_state == ST_VIDEO) { video_draw(w, h); return; }
     glViewport(0, 0, w, h);
     glClearColor(0.02f, 0.02f, 0.06f, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1254,6 +1258,130 @@ static void start_vs_fight(void)
     else { int o = vs_opponent(); begin_match(g_pick[0], o, o <= 11 ? o : 0, 0, 1); }
 }
 
+/* ---- FMV (Video.c, player 0x42aad0; docs/FORMATS.md ".BRP") ----
+ * The videos are on the CD (tools/rip_video.py copies them to video/). A sequence plays one after
+ * the other; ESC skips the rest of the sequence (0x4a5cf0), any other key the current video. */
+static const char *g_vq[8];
+static int  g_vq_n, g_vq_i;
+static void (*g_vq_done)(void);
+static Video *g_vid;
+static double g_vid_t, g_vid_end;
+static uint32_t g_vid_ts;
+static int  g_vid_pending, g_vid_eof, g_vid_tw, g_vid_th;
+static GLuint g_vid_tex;
+static char g_vid_dirs[5][1100];
+
+static void video_dirs_init(void)
+{
+    char *base = SDL_GetBasePath();
+    snprintf(g_vid_dirs[0], sizeof g_vid_dirs[0], "%svideo/", base ? base : "");
+    snprintf(g_vid_dirs[1], sizeof g_vid_dirs[1], "%s../video/", base ? base : "");
+    snprintf(g_vid_dirs[2], sizeof g_vid_dirs[2], "%sport/video/", g_pac_dir);
+    snprintf(g_vid_dirs[3], sizeof g_vid_dirs[3], "%svideo/", g_pac_dir);
+    snprintf(g_vid_dirs[4], sizeof g_vid_dirs[4], "%sFIGHT/VIDEO/", g_pac_dir);   /* the installed game's */
+    if (base) SDL_free(base);
+}
+
+static void video_finish(void)
+{
+    audio_stream_stop();
+    video_close(g_vid); g_vid = NULL;
+}
+
+static void video_start_next(void)
+{
+    while (g_vq_i < g_vq_n) {
+        const char *nm = g_vq[g_vq_i++];
+        for (int d = 0; d < 5 && !g_vid; d++) {
+            char p[1200]; snprintf(p, sizeof p, "%.1100s%.40s.brp", g_vid_dirs[d], nm);
+            g_vid = video_open(p);
+        }
+        if (!g_vid) continue;                        /* not ripped from the CD: skipped */
+        size_t fr; int rate;
+        const int16_t *pcm = video_audio(g_vid, &fr, &rate);
+        audio_stream_play(pcm, fr, rate);
+        g_vid_t = 0; g_vid_end = 0; g_vid_pending = 0; g_vid_eof = 0;
+        int w = video_width(g_vid), h = video_height(g_vid), tw = 1, th = 1;
+        while (tw < w) tw <<= 1;
+        while (th < h) th <<= 1;
+        if (!g_vid_tex) glGenTextures(1, &g_vid_tex);
+        glBindTexture(GL_TEXTURE_2D, g_vid_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        uint8_t *black = calloc((size_t)tw * th, 3);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tw, th, 0, GL_RGB, GL_UNSIGNED_BYTE, black);
+        free(black);
+        g_vid_tw = tw; g_vid_th = th;
+        g_state = ST_VIDEO; g_state_t = 0;
+        if (getenv("FX_AUTOTEST")) { printf("video %s %dx%d", nm, w, h); puts(""); fflush(stdout); }
+        return;
+    }
+    g_vq_n = g_vq_i = 0;
+    void (*done)(void) = g_vq_done;
+    g_vq_done = NULL;
+    if (done) done();
+}
+
+static void play_videos(const char *const *names, int n, void (*done)(void))
+{
+    if ((getenv("FX_AUTOTEST") && !getenv("FX_VIDEOTEST")) || getenv("FX_NOVIDEO")) { if (done) done(); return; }   /* tests: none */
+    music_stop();
+    g_vq_n = n > 8 ? 8 : n; g_vq_i = 0; g_vq_done = done;
+    for (int i = 0; i < g_vq_n; i++) g_vq[i] = names[i];
+    video_start_next();
+}
+
+static void video_update(double dt)
+{
+    if (!g_vid) return;
+    g_vid_t += dt;
+    double now_ms = g_vid_t * 1000.0;
+    int show = 0;
+    for (;;) {                                       /* catch up: decode until the next frame is due later */
+        if (!g_vid_pending) {
+            if (g_vid_eof || !video_next(g_vid, &g_vid_ts)) {
+                if (!g_vid_eof) { g_vid_eof = 1; g_vid_end = g_vid_t; }
+                break;
+            }
+            g_vid_pending = 1;
+        }
+        if ((double)g_vid_ts > now_ms) break;
+        show = 1; g_vid_pending = 0;
+        glBindTexture(GL_TEXTURE_2D, g_vid_tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, video_width(g_vid), video_height(g_vid), GL_RGB, GL_UNSIGNED_BYTE, video_rgb(g_vid));
+    }
+    (void)show;
+    if (g_vid_eof && g_vid_t >= g_vid_end + 0.07) { video_finish(); video_start_next(); }   /* after the last frame */
+}
+
+static void video_key(SDL_Keycode k)
+{
+    if (k == SDLK_ESCAPE) g_vq_i = g_vq_n;          /* skip the whole sequence */
+    video_finish();
+    video_start_next();
+}
+
+static void video_draw(int w, int h)
+{
+    glViewport(0, 0, w, h);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (!g_vid) return;
+    ui_begin(w, h);
+    int vw = video_width(g_vid), vh = video_height(g_vid);
+    Sprite sp = { g_vid_tex, vw, vh, (float)vw / (float)g_vid_tw, (float)vh / (float)g_vid_th, 1 };
+    ui_draw(&sp, 320.f - (float)vw, 240.f - (float)vh, 2.f, 1.f);   /* 320 wide at 2x, centred */
+    ui_end();
+}
+
+/* after the last ladder fight: the win video, then the name entry (status 11 -> entry 2) */
+static void after_win_video(void) { fe_enter_entry(2); }
+static void after_lose_video(void) { fe_enter(); }
+
 /* ---- continue screen (continue.c, 0x4368c0, docs/FRONTEND.md) ----
  * The steel doors close in (x += v, v += 1.2 per frame), then the banner "PLAYER n CONTINUE", in 2P
  * the champion's cup with his winning streak, and a countdown 10..0 (real time, 10.98 s). Only the
@@ -1283,7 +1411,8 @@ static void cont_finish(int r)
             fe_enter_entry(3);                       /* pick a fighter, then the ladder goes on */
             return;
         }
-        fe_enter();
+        static const char *const LOSE[1] = { "lose" };   /* 1P game over (0x413e9d): not after Rygil */
+        if (g_f[0].id != 9) play_videos(LOSE, 1, after_lose_video); else fe_enter();
         return;
     }
     if (r == 2) { start_vs_fight(); return; }        /* 2P (0x40413a): rematch */
@@ -1375,7 +1504,8 @@ static void after_match(void)
         if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
         g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
         g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
-        fe_enter_entry(2);
+        static const char *const WIN[1] = { "win" };   /* 0x413f2d */
+        play_videos(WIN, 1, after_win_video);
         return;
     }
     fe_enter();                                     /* back to the 3D front end */
@@ -1999,6 +2129,7 @@ int main(int argc, char **argv)
         cfg_apply();
         for (int i = 0; i < SDL_NumJoysticks(); i++) pad_added(i);
         if (!g_debug_fight) g_fe_ok = fe_load();
+        video_dirs_init();
     } else if (getenv("FX_PREFDIR")) cfg_load();   /* tests: screenshots with a given options.cfg */
     srand(shot ? 1234u : (unsigned)SDL_GetTicks() ^ 0x5eed);
 
@@ -2015,8 +2146,10 @@ int main(int argc, char **argv)
         if (cli_dist > 0) g_dist = cli_dist;
         if (getenv("FX_KEEP_YAW")) g_yaw = yaw;
         g_two_players = two_players;
-    } else if (g_fe_ok) fe_enter();
-    else if (!shot) {                            /* the menus are the original's scripts: they need FIGHT.EXE */
+    } else if (g_fe_ok) {                           /* 0x44427a: the logos, then the intro */
+        static const char *const INTRO[4] = { "arglogo", "brender", "fxlogo", "fxintro" };
+        play_videos(INTRO, 4, fe_enter);
+    } else if (!shot) {                            /* the menus are the original's scripts: they need FIGHT.EXE */
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "FX Fighter Turbo",
             "The menus need the original FIGHT.EXE next to FIGHT.PAC (see README.md).\n"
             "A single fight without menus: fxfighter FIGHT.PAC --p1 1 --p2 2", win);
@@ -2064,6 +2197,7 @@ int main(int argc, char **argv)
             } else if (e.type == SDL_KEYDOWN && !e.key.repeat) {
                 Fighter *a = &g_f[0], *b = &g_f[1];
                 SDL_Keycode k = e.key.keysym.sym;
+                if (g_state == ST_VIDEO) { if (k != SDLK_F11) { video_key(k); continue; } }
                 if (g_state == ST_FIGHT && g_fe_mode == 0) { fe_enter(); continue; }   /* any key ends the demo */
                 if (g_state == ST_FIGHT && g_tour && g_fight.p[0].cpu && g_fight.p[1].cpu && k != SDLK_ESCAPE &&
                     !getenv("FX_AUTOTEST")) {           /* 0x445874: a CPU match is skipped, random winner */
@@ -2148,7 +2282,8 @@ int main(int argc, char **argv)
         if (dt > 0.25) dt = 0.25;
         if (getenv("FX_SPEED")) dt *= atof(getenv("FX_SPEED"));   /* testing: fast forward */
         acc += dt;
-        if (g_state == ST_FE3D) {
+        if (g_state == ST_VIDEO) { video_update(dt); acc = 0; }
+        else if (g_state == ST_FE3D) {
             while (acc >= FE_TICK && g_state == ST_FE3D) { if (!fe_tick()) running = 0; acc -= FE_TICK; }
             if (g_state != ST_FE3D) acc = 0;
             g_fe_alpha = (float)(acc / FE_TICK);   /* 15 Hz scripts, smooth drawing */

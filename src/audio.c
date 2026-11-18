@@ -153,6 +153,8 @@ static int   g_mopen, g_track = -1, g_music_on = 1, g_sfx_on = 1;
 static float g_mvol = 0.6f, g_svol = 0.9f;
 static char  g_dir[1024];
 static int32_t g_mix[8192];
+/* FMV sound track: interleaved stereo, 48.16 position (video.c) */
+static const int16_t *g_vs; static size_t g_vs_n; static uint64_t g_vs_pos; static uint32_t g_vs_step;
 
 static void SDLCALL audio_cb(void *ud, Uint8 *stream, int len)
 {
@@ -203,12 +205,37 @@ static void SDLCALL audio_cb(void *ud, Uint8 *stream, int len)
             }
         }
     }
+    if (g_vs) {                                    /* FMV sound track (linear resampling) */
+        int sv = (int)(g_svol * 256);
+        for (int i = 0; i < frames; i++) {
+            uint64_t ip = g_vs_pos >> 16;
+            if (ip + 1 >= g_vs_n) { g_vs = NULL; break; }
+            int32_t fr = (int32_t)(g_vs_pos & 0xffff);
+            for (int c = 0; c < 2; c++) {
+                int32_t a = g_vs[ip * 2 + c], b = g_vs[ip * 2 + 2 + c];
+                g_mix[i * 2 + c] += ((a + (((b - a) * fr) >> 16)) * sv) >> 8;
+            }
+            g_vs_pos += g_vs_step;
+        }
+    }
     for (int i = 0; i < frames * 2; i++) {
         int32_t x = g_mix[i];
         out[i] = (Sint16)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);
     }
     if (len / 4 > frames) memset(stream + frames * 4, 0, (size_t)(len - frames * 4));
 }
+
+void audio_stream_play(const int16_t *stereo, size_t frames, int rate)
+{
+    if (!g_dev) return;
+    SDL_LockAudioDevice(g_dev);
+    g_vs = stereo && frames > 1 && rate > 0 ? stereo : NULL;
+    g_vs_n = frames; g_vs_pos = 0;
+    g_vs_step = rate > 0 ? (uint32_t)(((uint64_t)rate << 16) / 44100) : 0;
+    SDL_UnlockAudioDevice(g_dev);
+}
+
+void audio_stream_stop(void) { audio_stream_play(NULL, 0, 0); }
 
 void sfx_play(int bank, int index)
 {

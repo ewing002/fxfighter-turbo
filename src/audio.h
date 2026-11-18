@@ -26,6 +26,9 @@ float sfx_get_volume(void);
 int  sfx_bank_load(int bank, const char *name);
 /* play entry `index` (1-based) of a bank (FUN_00435eb4) */
 void sfx_play(int bank, int index);
+/* an FMV sound track: interleaved stereo 16-bit; the buffer must stay valid until stopped */
+void audio_stream_play(const int16_t *stereo, size_t frames, int rate);
+void audio_stream_stop(void);
 void sfx_toggle(void);
 int  sfx_enabled(void);
 

@@ -36,7 +36,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
   ```
   S=<sdl2>/x86_64-w64-mingw32
   x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I$S/include/SDL2 \
-    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c \
+    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c \
     -L$S/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o bin-win64/fxfighter.exe
   ```
   A `SDL2.dll` a `bin-win64/` mappában van.
@@ -45,7 +45,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
   export PATH=/c/msys64/mingw64/bin:$PATH
   mkdir -p build-win
   gcc -O2 -std=c11 -Dmain=SDL_main -I/c/msys64/mingw64/include/SDL2 \
-    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c \
+    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c \
     -L/c/msys64/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o build-win/fxfighter.exe
   gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o build-win/fs.exe
   gcc -O2 -Isrc tests/fecheck.c src/fe3d.c src/assets.c -lm -o build-win/fecheck.exe
@@ -76,8 +76,8 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 2. **Jerzan (12. harcos):** nem kell javítani. Az eredeti sosem állítja ki: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pedig szándékosan pontnyira vannak zsugorítva (csak a fej, a kezek és a lábfejek látszanak). Félbehagyott tartalom.
 3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Az effektje (`f1a48`) hiányzik.
 4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
-5. **Menük (3D front end):** az eredeti menük egy szkript-VM-mel mozgatott BRender 3D jelenet. Felderítés, terv és állapot: `docs/FRONTEND.md` (eszközök: `tools/stratdis.py`, `tools/menutab.py`). Kész az 5. lépés: a 3D menü az alapértelmezés (bemenet, hangok, zene, beállítások, meccsindítás és visszatérés). A 6. lépés is kész: a régi 2D-s menük kikerültek, a menü csak a 3D front end (`FIGHT.EXE` nélkül hibaüzenet; menü nélküli harc: `--p1/--p2/--arena`). A `--screen fe3d` a VM jelenetét rajzolja `FX_FE_TICKS=<n>` tick és `FX_FE_INPUT="30:P1DOWN 75:P1PUNCH 130:P2PUNCH"` után; a szkript a valódi futásban is hat (`FX_AUTOTEST=1 FX_SPEED=10`, kiírja a módokat; ilyenkor az ablak rejtett, nincs teljes képernyő, és mindkét harcos gépi – futtasd `SDL_AUDIODRIVER=dummy`-val és `FX_PREFDIR=<külön mappa>`-val, hogy ne szóljon és ne írja a felhasználó `options.cfg`-jét és `hiscores.dat`-ját; az `APPDATA` átírása ehhez nem elég, mert az SDL a valódi mappát kérdezi le). `FX_FE_ENTRY=<mód> FX_FE_G="59=60000,63=80000"` a képernyőkép-módban egy belépési módot mutat (pl. 1 = torna VS, 2 = rekord-névbeírás `62=50000,61=00000105`-tel, 6 = eredmények). Hátralévők: `docs/FRONTEND.md` 5. lépés vége (a kihívó becsatlakozása, a videók és a stáblista).
-6. **Folytatás, stáblista, FMV:** nincs kész (a rekordtábla kész, lásd `docs/FRONTEND.md`).
+5. **Menük (3D front end):** az eredeti menük egy szkript-VM-mel mozgatott BRender 3D jelenet. Felderítés, terv és állapot: `docs/FRONTEND.md` (eszközök: `tools/stratdis.py`, `tools/menutab.py`). Kész az 5. lépés: a 3D menü az alapértelmezés (bemenet, hangok, zene, beállítások, meccsindítás és visszatérés). A 6. lépés is kész: a régi 2D-s menük kikerültek, a menü csak a 3D front end (`FIGHT.EXE` nélkül hibaüzenet; menü nélküli harc: `--p1/--p2/--arena`). A `--screen fe3d` a VM jelenetét rajzolja `FX_FE_TICKS=<n>` tick és `FX_FE_INPUT="30:P1DOWN 75:P1PUNCH 130:P2PUNCH"` után; a szkript a valódi futásban is hat (`FX_AUTOTEST=1 FX_SPEED=10`, kiírja a módokat; ilyenkor az ablak rejtett, nincs teljes képernyő, és mindkét harcos gépi – futtasd `SDL_AUDIODRIVER=dummy`-val és `FX_PREFDIR=<külön mappa>`-val, hogy ne szóljon és ne írja a felhasználó `options.cfg`-jét és `hiscores.dat`-ját; az `APPDATA` átírása ehhez nem elég, mert az SDL a valódi mappát kérdezi le). `FX_FE_ENTRY=<mód> FX_FE_G="59=60000,63=80000"` a képernyőkép-módban egy belépési módot mutat (pl. 1 = torna VS, 2 = rekord-névbeírás `62=50000,61=00000105`-tel, 6 = eredmények). Hátralévők: `docs/FRONTEND.md` 5. lépés vége (a kihívó becsatlakozása és a stáblista).
+6. **Folytatás, stáblista, FMV:** a CONTINUE képernyő, a rekordtábla és a videók (`src/video.c`, a CD-ről `tools/rip_video.py`-jal) kész; a stáblista nincs. Tesztben a videók nem futnak (`FX_AUTOTEST`), csak `FX_VIDEOTEST=1`-gyel; `FX_NOVIDEO=1` kikapcsolja őket.
 7. **Színezés:** a `colmap.tab` árnyalótáblát nem emulálja.
 8. **Háttér:** a függőleges eltolás (`0x4f1b5a`) becsült.
 

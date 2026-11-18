@@ -236,6 +236,30 @@ Hangeffekt-paraméterbankok (float mezők; feltehetően térhatás/hangerő). A 
 - Zene: CD-audio sávok (MCI, `FUN_0043adf8`). Harc közben az `aréna + 2`-es sáv szól (`FUN_0043b077(a8308 + 2)`), a stáblistánál a 2-es, demó módban a 14-es.
   Az 1. sáv a CD adatsávja (MODE1/2352). A kép egyetlen BIN fájl, a hang benne **big-endian** 16 bites sztereó 44,1 kHz.
 
+## Videók: `fight/video/*.brp` ✅
+A CD-n vannak (`FIGHT/VIDEO`; a telepített `FIGHT\VIDEO\WIN.BRP` valójában a BRender-logó), a `tools/rip_video.py`
+másolja ki őket. Lejátszó: `0x42aad0` (`Video.c`), szétbontó `0x419900` / `0x419bae`. A port: `src/video.c`, ellenőrző
+eszköz: `tests/brpcheck.c` (a Python referenciával pixelre és mintára azonos).
+```
+'BRPP', u32 nstreams, u32 0x4b000
+nstreams × { fourcc 'BVID' | 'BASF', u32 index, u32 hossz (ms), u32 max chunk, u32 extra hossz, extra }
+  BVID extra: u32 képkockák, u32 szélesség (320), u32 magasság (200 / 180 / 150), u32 mélység (24)
+  BASF extra: 'ASF\0', u16 1, u16 2, u32 hangchunkok száma, u32 0x18, char név[8]
+chunkok a 0xFFFFFFFF indexig: { u32 stream, u32 időbélyeg (ms), u32 méret, adat }
+```
+Sorrend: a hang chunk(ok) (az FXINTRO-ban kb. 0,5 s-os darabok közbeszúrva), egy `PAL8` (a játék nem használja), aztán
+képkockánként egy `MAD1`. A képkockák az időbélyeg szerint jönnek (15 kép/s; a stáblista klipjei 13, az ARGLOGO 30).
+**MAD1** (24 bites ág, `0x42ba80`): műveleti kódok 0xFF-ig, helyben, egy megmaradó képpufferbe; a színek R, G, B.
+8 = kulcskép (törlés, 12×12-es egyszínű blokkok); 10 = a kép mentése „előzőnek”; 11 / 13 = B×B blokkok 2 bites kódokkal
+(kihagy / mozgásvektor / egyszínű / vektor-eltérés; forrás az előző, illetve az aktuális kép); 12 = oszloponként 4×4-es
+blokkok pixelenkénti kódokkal (bal, fölső, eltolás-táblák A/B, szó szerinti szín); 7 = blokkmozgatások listája.
+A `.CLT` (RGB555 → palettaindex) és a `.PAL` csak 8 bites képernyőhöz kell, a portnak nem.
+**Hang:** minden chunk egy `.asf` fájl az első 0x18 bájt nélkül: sztereó, 22050 Hz, 34 bájtos blokkok (bal, jobb:
+vezérlőbájt + 16 bájt); a DPCM a hanghatásoké, a prediktor csatornánként blokkon és chunkon át folytatódik.
+Esc a sorozat többi videóját is átugorja (`0x4a5cf0`), más gomb csak az aktuálisat. Indításkor: ARGLOGO, BRENDER, FXLOGO,
+FXINTRO (`0x44427a`; ebben a FIGHT.EXE-ben minden videóútvonal `win.brp`-re van átírva, a nevek a CD-ről valók);
+a létra végén WIN (`0x413f2d`), 1P game over után LOSE (`0x413e9d`, Rygillel nem).
+
 ## Egyéb
 - `FIGHT/VIDEO/*.CLT/*.PAL/*.BRP`: FMV-k (Argonaut-formátum), ❌
 - `boutgfx/*.pix`: HUD-grafikák (FIGHT, KO, ROUND, …), BRender pixmapok, ✅ olvashatók
