@@ -7,13 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-#define MAX_ITEMS 260
-typedef struct { char name[24]; Sprite s; } Item;
-static Item   g_items[MAX_ITEMS];
-static int    g_nitems;
-static Sprite g_back, g_title;
 static const char *BOUT_NAMES[] = {
     "fight", "ko", "round", "rndnumbr", "ringout", "timeover", "winner", "youwin", "youlose",
     "suddeath", "draw", "timer", "panel", "pan_cpu", "gameover", "pause",
@@ -27,7 +21,7 @@ static int pot(int v) { int p = 1; while (p < v) p <<= 1; return p; }
 
 /* indexed image -> texture (padded to power of two, nearest filtering for crisp pixel art).
  * key >= 0: that palette index is transparent. flip: image stored bottom-up. */
-static Sprite make_sprite_m(const uint8_t *px, int w, int h, int stride, const Rgb *pal, int key, int flip, int mirror)
+static Sprite make_sprite(const uint8_t *px, int w, int h, int stride, const Rgb *pal, int key, int flip)
 {
     Sprite s; memset(&s, 0, sizeof s);
     if (!px || w <= 0 || h <= 0) return s;
@@ -36,7 +30,7 @@ static Sprite make_sprite_m(const uint8_t *px, int w, int h, int stride, const R
     for (int y = 0; y < h; y++) {
         const uint8_t *row = px + (size_t)(flip ? h - 1 - y : y) * stride;
         for (int x = 0; x < w; x++) {
-            uint8_t v = row[mirror ? w - 1 - x : x];
+            uint8_t v = row[x];
             uint8_t *o = rgba + ((size_t)y * tw + x) * 4;
             o[0] = pal[v].r; o[1] = pal[v].g; o[2] = pal[v].b; o[3] = (key >= 0 && v == key) ? 0 : 255;
         }
@@ -51,65 +45,6 @@ static Sprite make_sprite_m(const uint8_t *px, int w, int h, int stride, const R
     free(rgba);
     s.w = w; s.h = h; s.u1 = (float)w / (float)tw; s.v1 = (float)h / (float)th; s.ok = 1;
     return s;
-}
-
-static Sprite make_sprite(const uint8_t *px, int w, int h, int stride, const Rgb *pal, int key, int flip)
-{
-    return make_sprite_m(px, w, h, stride, pal, key, flip, 0);
-}
-
-static int opaque_item(const char *n)
-{
-    return !strncmp(n, "PLYR", 4) || !strncmp(n, "ARENA", 5) || !strcmp(n, "MAGNON") ||
-           !strcmp(n, "EMPTY") || strstr(n, "_T") == n + strlen(n) - 2;
-}
-
-static void load_bmp(const Pac *pac, const char *name, Sprite *out)
-{
-    size_t sz;
-    const uint8_t *d = pac_get(pac, name, &sz);
-    if (!d || sz < 1078 || d[0] != 'B' || d[1] != 'M') return;
-    uint32_t off = d[10] | (d[11] << 8) | (d[12] << 16) | ((uint32_t)d[13] << 24);
-    int32_t w = (int32_t)(d[18] | (d[19] << 8) | (d[20] << 16) | ((uint32_t)d[21] << 24));
-    int32_t h = (int32_t)(d[22] | (d[23] << 8) | (d[24] << 16) | ((uint32_t)d[25] << 24));
-    uint32_t hs = d[14] | (d[15] << 8);
-    if (d[28] != 8 || w <= 0 || h == 0) return;
-    int bottom_up = h > 0; if (h < 0) h = -h;
-    Rgb pal[256];
-    for (int i = 0; i < 256; i++) {
-        const uint8_t *c = d + 14 + hs + i * 4;
-        if (14 + hs + i * 4 + 3 >= off) { pal[i].r = pal[i].g = pal[i].b = 0; continue; }
-        pal[i].r = c[2]; pal[i].g = c[1]; pal[i].b = c[0];
-    }
-    int stride = (w + 3) & ~3;
-    if (off + (size_t)stride * h > sz) return;
-    *out = make_sprite(d + off, w, h, stride, pal, -1, bottom_up);
-}
-
-void ui_init(const Pac *pac)
-{
-    size_t sz;
-    static Pixmap pm[MAX_ITEMS];
-    const uint8_t *d = pac_get(pac, "fight/frontend/align.pix", &sz);
-    int n = d ? pix_load_all(d, sz, pm, MAX_ITEMS) : 0;
-    g_nitems = 0;
-    for (int i = 0; i < n; i++) {
-        Pixmap *p = &pm[i];
-        if (g_nitems < MAX_ITEMS && p->has_pal) {
-            Item *it = &g_items[g_nitems++];
-            snprintf(it->name, sizeof it->name, "%s", p->name);
-            int rot = !strcmp(p->name, "VS");          /* stored rotated by 180 degrees, not just flipped */
-            it->s = make_sprite_m(p->pixels, p->width, p->height, p->row_bytes, p->pal,
-                                  opaque_item(p->name) ? -1 : p->pixels[0], !rot, rot);
-        }
-        pix_free(p);
-    }
-    d = pac_get(pac, "fight/frontend/back1.pix", &sz);
-    if (d && pix_load_all(d, sz, pm, 1) == 1) {
-        g_back = make_sprite(pm[0].pixels, pm[0].width, pm[0].height, pm[0].row_bytes, pm[0].pal, -1, 0);
-        pix_free(&pm[0]);
-    }
-    load_bmp(pac, "fight/fxscreen.bmp", &g_title);
 }
 
 void ui_load_bout(const Pac *pac, const Rgb *pal)
@@ -127,20 +62,11 @@ void ui_load_bout(const Pac *pac, const Rgb *pal)
     }
 }
 
-const Sprite *ui_sprite(const char *name)
-{
-    for (int i = 0; i < g_nitems; i++) if (!strcmp(g_items[i].name, name)) return &g_items[i].s;
-    return NULL;
-}
-
 const Sprite *ui_bout(const char *name)
 {
     for (int i = 0; i < NBOUT; i++) if (!strcmp(BOUT_NAMES[i], name)) return g_bout[i].ok ? &g_bout[i] : NULL;
     return NULL;
 }
-
-const Sprite *ui_back(void) { return g_back.ok ? &g_back : NULL; }
-const Sprite *ui_title(void) { return g_title.ok ? &g_title : NULL; }
 
 /* ------------------------------------------------------------------ */
 void ui_begin(int w, int h)
@@ -201,40 +127,6 @@ void ui_rect(float x0, float y0, float x1, float y1, float r, float g, float b, 
     glBegin(GL_QUADS);
     glVertex2f(x0, y0); glVertex2f(x1, y0); glVertex2f(x1, y1); glVertex2f(x0, y1);
     glEnd();
-}
-
-void ui_frame(float x0, float y0, float x1, float y1, float t, float r, float g, float b, float a)
-{
-    ui_rect(x0, y0, x1, y0 + t, r, g, b, a);
-    ui_rect(x0, y1 - t, x1, y1, r, g, b, a);
-    ui_rect(x0, y0, x0 + t, y1, r, g, b, a);
-    ui_rect(x1 - t, y0, x1, y1, r, g, b, a);
-}
-
-static const Sprite *glyph(char c)
-{
-    char n[4] = { 0 };
-    if (c >= 'a' && c <= 'z') c = (char)(c - 32);
-    if (c >= 'A' && c <= 'Z') { n[0] = c; return ui_sprite(n); }
-    if (c >= '0' && c <= '9') { char m[4] = { c, '_', 'T', 0 }; return ui_sprite(m); }
-    return NULL;
-}
-
-float ui_text_width(const char *s, float sc)
-{
-    float w = 0;
-    for (; *s; s++) { const Sprite *g = glyph(*s); w += (g ? (float)g->w : 10.f) * sc; }
-    return w;
-}
-
-float ui_text(const char *s, float x, float y, float sc, float a)
-{
-    for (; *s; s++) {
-        const Sprite *g = glyph(*s);
-        if (g) { ui_draw(g, x, y, sc, a); x += (float)g->w * sc; }
-        else x += 10.f * sc;
-    }
-    return x;
 }
 
 /* glyph columns measured from the sprites (empty columns between digits) */

@@ -91,7 +91,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - a 12/13-as triggertípusok nem sülnek el, ütközés nincs (egy szkript sem állít maszkot);
    - a világpozíció függvény az eredetihez hűen 1/10 szkriptegységet ad;
    - a méret tengelyenkénti (a középső doboz 256/128/128), ezért `FeNode.scale[3]`.
-5. ✅ **Összekötés** (`src/main.c`, `fe_*` függvények; a 3D menü az alapértelmezés, `--menu2d` a régi):
+5. ✅ **Összekötés** (`src/main.c`, `fe_*` függvények; a 3D menü az egyetlen menü):
    - bemenet 15 Hz-en: P1 W/A/S/D + F/G (Enter, Space is), P2 nyilak + K/L, kontrollerek, Esc/Backspace;
      a tickek közti rövid lenyomásokat a port megjegyzi; nyers billentyűk (E4) DirectInput-kóddal (`di_scan`);
    - hangok a `frontend` bankból (0. bank; a `#` jelű bemondások sorban, egymás után, lásd `docs/FORMATS.md`),
@@ -148,7 +148,11 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
    képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: játéksebesség (EC), részletesség, a létra folytatása (ED, G67),
    a visszatérés pontos belépési módja (G58) a meccs után.
-6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
+6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
+   `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
+   `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü
+   nélkül fut, Esc-re kilép. A 3D menüből nem állítható beállítások (`fullscreen`, `vsync`, `ringouts`, `rumble`,
+   99 mp-es menetidő) az `options.cfg`-ben maradtak.
 
 Kockázatok: a 8 bites paletta és a `shade.tab` árnyalás csak közelíthető; a 0xBD/0xBE és a D8–E0, E8–ED
 rendszerműveletek jelentése csak részben ellenőrzött; a 15 Hz-es ütem ezredmásodperces időzítőt feltételez.

@@ -53,5 +53,5 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 - A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.
 - A kábulás (`f1a48 = 0x17f`, valószínűleg csillag-effekt vagy hang) látványeleme még hiányzik, csak a mechanika van meg.
 - A portrék és a harcosok összerendelése a `frontend/demo.mat` anyagaiból jön (pl. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
-- A menük az eredeti 3D jelenetek, az eredeti szkriptekkel (`docs/FRONTEND.md`); a régi 2D-s változat `--menu2d`-vel érhető el.
+- A menük az eredeti 3D jelenetek, az eredeti szkriptekkel (`docs/FRONTEND.md`); a régi 2D-s menük kikerültek.
 - Jerzan (fm12.dat, `pan_cr12`) nem hiba: az eredeti létratáblájában nem szerepel, a modelljének teste szándékosan pontnyira zsugorított. Kimarad a létrából, ahogy az eredetiben.

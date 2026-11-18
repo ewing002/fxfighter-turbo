@@ -28,19 +28,20 @@ Ha máshová teszed, a `FIGHT.PAC`-ot rakd mellé, vagy add meg az útvonalát p
 és az eredeti módon futtatja őket. Az 1. játékos a W/A/S/D gombokkal mozog, és F-fel (vagy Enterrel, Space-szel) választ, G = rúgás.
 A 2. játékos a nyilakkal mozog, és K-val választ, L = rúgás. Vissza és kilépés: Esc (vagy Backspace). Az OPTIONS menüben a SAVE gomb
 menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek száma, a nehézség és a hangerők akkor is érvényesek, ha nem mented őket.
-Ha a `FIGHT.EXE` hiányzik, vagy `--menu2d` kapcsolóval indítod, a port régi 2D-s menüi jönnek elő.
+A menükhöz kell a `FIGHT.EXE`; ha hiányzik, a program hibaüzenettel kilép (menü nélküli harc: `--p1 N --p2 N`, lásd lent).
 A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítani (ATTACK = előre, RETREAT = hátra a kezdőoldalról nézve);
 a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
-Még hiányzik: nincs hálózati játék; a hendikep és a részletességi szintek nem hatnak a harcra.
+Még hiányzik: nincs hálózati játék; a részletességi szintek nem hatnak a harcra.
 
 **Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
 Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
 Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgás, B / Back = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
 
-**Beállítások (a régi 2D-s OPTIONS menüben, `--menu2d`):** teljes képernyő / ablak, VSync, zene és hangeffektek hangereje (0–10), körök száma (1, 3 vagy 5 körös meccs),
-kör hossza (30 / 60 / 90 / 99 másodperc vagy időkorlát nélkül), ringből kiesés be/ki, a gépi ellenfél nehézsége (1–8, alapértéke 5), rezgés be/ki.
+**Beállítások:** a menetidő, a menetek száma, a nehézség, a hendikep, a hangerők és a gombok a 3D menü OPTIONS részében állíthatók.
+A többi csak az `options.cfg`-ben: `fullscreen` (0/1, F11-gyel vagy Alt+Enterrel is), `vsync`, `ringouts` (ringből kiesés), `rumble` (rezgés),
+`round_time=99` (az eredetiben nincs ilyen menetidő).
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A rekordtábla ugyanitt van (`hiscores.dat`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
 **Harc** (alapkiosztás)
@@ -63,7 +64,7 @@ nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb l�
 A 2. játékost 1 játékos módban a gép irányítja. Teszteléshez (F3/F4/F5/R/1/2/9/0/N/F1) a régi gyorsgombok is működnek.
 
 Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
-valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen title|menu|select|arena|vs|fe3d --menu2d`.
+valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
 
 ## Zene
 A játék eredetileg CD-audio sávokat játszott le. A `tools/rip_cd.py` a CD-képből (BIN + CUE) MP3-at készít:
@@ -89,8 +90,9 @@ x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I<SDL2>/include/SDL2 src/ma
 - `src/assets.[ch]`: az összes formátum betöltője
 - `src/fight.[ch]`: harcmotor (mozdulat-állapotgép, bemenet, találat, körök)
 - `src/tables.h`: az EXE statikus táblái (testrészcsoportok, reakciótáblák)
-- `src/main.c`: renderelés, kamera, bemenet, HUD, menük és meccslogika, néző
-- `src/ui.[ch]`: 2D sprite-ok (`frontend/align.pix`, `back1.pix`, `fxscreen.bmp`, `boutgfx/*.pix`) 640×480-as virtuális képernyőn
+- `src/main.c`: renderelés, kamera, bemenet, HUD, a 3D menü bekötése és a meccslogika, néző
+- `src/ui.[ch]`: a harc 2D sprite-jai (`boutgfx/*.pix`) 640×480-as virtuális képernyőn
+- `src/fe3d*.[ch]`: a 3D menü (eszközök, szkript-VM, renderelő)
 - `src/audio.[ch]`, `src/dr_mp3.h`: zene (MP3, dr_mp3 v0.7.2, public domain / MIT-0) és hangeffekt-keverő, `.asf`-dekóder
 - `tests/fightsim.c`: fej nélküli harcszimuláció (két CPU), regressziós teszthez
 - `tools/*.py`: Python-eszközök (kicsomagolás, dump, formátumkutatás)

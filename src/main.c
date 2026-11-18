@@ -79,23 +79,22 @@ static float g_bg_turn = 90, g_cm_pitch_bg = 88;
 #define CAM_ASPECT 1.46f
 
 /* ---- front end / match state ---- */
-enum { ST_TITLE, ST_MENU, ST_SELECT, ST_ARENA, ST_VS, ST_OPTIONS, ST_FIGHT, ST_FE3D };
-static int  g_state = ST_TITLE, g_state_t;      /* current screen, ticks spent in it */
+enum { ST_FIGHT, ST_FE3D };
+static int  g_state = ST_FE3D, g_state_t;      /* 3D menus or a fight; ticks spent in it */
 static int  g_two_players;                      /* match type: 0 = 1 player vs CPU ladder, 1 = 2 players */
 static int  g_debug_fight;                      /* started from the command line: endless rounds */
 static int  g_round = 1, g_match_over_t;        /* round number, ticks left on the match result */
-static int  g_menu_sel, g_cur[2], g_pick[2], g_arena_sel = 1;
+static int  g_pick[2], g_arena_sel = 1;         /* the match the front end asked for */
 static int  g_ladder[16], g_nladder, g_ladder_pos;
 static int  g_ladder_ticks;                     /* 1P ladder: fight time so far (0x4c7320), FIGHT_HZ ticks */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
-static char g_fname[16][16], g_aname[16][16];   /* fighter / arena names from fi%d.cmp */
 
 /* ---- options (saved in the user's preferences folder) ---- */
 typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2]; } Config;
 static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 } };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 static SDL_Window *g_win;
-static int  g_opt_sel, g_fight_paused;
+static int  g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
 static int  g_pad_dir[2][2];                    /* last stick direction per pad (menu navigation) */
 static int  g_last_health[2];
@@ -570,7 +569,6 @@ static void draw_background_flat(int w, int h)
     glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
 }
 
-static void render_front(int w, int h);
 static FeAssets g_fe;
 static FeVm     g_vm;
 static FeScene  g_fesc;
@@ -579,7 +577,6 @@ static float    g_fe_alpha = 1;     /* drawing position between the last two VM 
 static void render(int w, int h)
 {
     if (g_state == ST_FE3D) { fe_vm_scene_lerp(&g_vm, &g_fesc, g_fe_alpha); fe_gl_render(&g_fe, &g_fesc, w, h); return; }
-    if (g_state != ST_FIGHT) { render_front(w, h); return; }
     glViewport(0, 0, w, h);
     glClearColor(0.02f, 0.02f, 0.06f, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1119,39 +1116,14 @@ static void update_camera(float dt, int snap)
 /*  Front end (winfront.c in the original): title, menu, fighter and   */
 /*  arena select, VS screen, best-of-three matches and the 1P ladder.  */
 /* ================================================================== */
-/* frontend/align.pix portrait of each fighter id, from the materials in frontend/demo.mat
- * (MAGNON->MAGNON, SHEBA->PLYR7, VENAM->PLYR10, JAKE->PLYR1, KIKO->PLYR2, SIREN->PLYR5, ASHRAF->PLYR4,
- *  CYBEN->PLYR8, RYGIL->PLYR3, LINNA->PLYR6, KWONDO->PLYR9, RANDOM->PLYR11; 12 = random "?" cell) */
-static const char *PORTRAIT[13] = { "EMPTY", "MAGNON", "PLYR7", "PLYR10", "PLYR1", "PLYR2", "PLYR5",
-                                    "PLYR4", "PLYR8", "PLYR3", "PLYR6", "PLYR9", "PLYR11" };
-#define GRID_N    12
-#define GRID_COLS 3
-static const int GRID[GRID_N] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0 };   /* 0 = random */
-enum { K_NONE, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_OK, K_BACK };
-enum { FS_MOVE = 1, FS_MOVE2 = 2, FS_SELECT = 3, FS_DENY = 4, FS_VERSUS = 11 };   /* frontend.fxl */
-
 static void set_state(int s)
 {
     g_state = s; g_state_t = 0;
     if (getenv("FX_AUTOTEST")) { printf("state %d round %d wins %d:%d ladder %d\n", s, g_round, g_fight.p[0].wins, g_fight.p[1].wins, g_ladder_pos); fflush(stdout); }
     if (s != ST_FIGHT) {
         if (!g_bank0_front) { sfx_bank_load(0, "frontend"); g_bank0_front = 1; }
-        if (s != ST_VS && s != ST_TITLE) music_play(14);       /* attract / menu music */
+        music_play(14);                                         /* attract / menu music */
     }
-}
-
-static void load_names(void)
-{
-    for (int id = 1; id <= 12; id++) {
-        size_t sz; FighterInfo fi;
-        const uint8_t *d = getf("fight/fighters/fi%d.cmp", id, &sz);
-        if (d && fighter_info_load(&fi, d, sz)) {
-            snprintf(g_fname[id], sizeof g_fname[id], "%s", fi.name);
-            snprintf(g_aname[id], sizeof g_aname[id], "%s", fi.arena);
-        }
-    }
-    snprintf(g_fname[12], sizeof g_fname[12], "JERZAN");         /* fi12 is a copy of Magnon's; name from pan_cr12 */
-    snprintf(g_aname[0], sizeof g_aname[0], "ARENA");
 }
 
 static void begin_match(int p1, int p2, int arena, int cpu1, int cpu2)
@@ -1226,26 +1198,16 @@ static void after_match(void)
     }
     g_endu = 0;
     if (g_tour) { tour_result(g_fight.winner); return; }
-    if (g_fe_ok && g_fe_mode >= 0) {                /* started from the 3D front end */
-        if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
-        if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
-            int secs = g_ladder_ticks / FIGHT_HZ;
-            if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
-            g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
-            g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
-            fe_enter_entry(2);
-            return;
-        }
-        fe_enter();
+    if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
+    if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
+        int secs = g_ladder_ticks / FIGHT_HZ;
+        if (getenv("FX_AUTOTEST")) { printf("ladder beaten: fighter %d time %d:%02d" "%s", g_f[0].id, secs / 60, secs % 60, "\n"); fflush(stdout); }
+        g_vm.G[62] = g_f[0].id << 16;            /* the winner's fighter */
+        g_vm.G[61] = time_digits(secs);          /* time taken, digits M M S S (0x41b0c5) */
+        fe_enter_entry(2);
         return;
     }
-    if (g_two_players) { g_pick[0] = g_pick[1] = 0; set_state(ST_SELECT); return; }
-    if (g_fight.winner == 0) {
-        if (++g_ladder_pos < g_nladder) { set_state(ST_VS); return; }
-        set_state(ST_TITLE); music_play(2);         /* beat everyone: credits music */
-        return;
-    }
-    set_state(ST_MENU);                             /* game over */
+    fe_enter();                                     /* back to the 3D front end */
 }
 
 /* called once per FIGHT_HZ tick while fighting */
@@ -1282,277 +1244,11 @@ static void match_tick(void)
     }
 }
 
-static int menu_key(SDL_Keycode k, int *who)
-{
-    *who = 0;
-    switch (k) {
-    case SDLK_w: return K_UP;
-    case SDLK_s: return K_DOWN;
-    case SDLK_a: return K_LEFT;
-    case SDLK_d: return K_RIGHT;
-    case SDLK_f: case SDLK_g: case SDLK_SPACE: return K_OK;
-    case SDLK_ESCAPE: case SDLK_BACKSPACE: *who = -1; return K_BACK;
-    default: break;
-    }
-    *who = 1;
-    switch (k) {
-    case SDLK_UP: return K_UP;
-    case SDLK_DOWN: return K_DOWN;
-    case SDLK_LEFT: return K_LEFT;
-    case SDLK_RIGHT: return K_RIGHT;
-    case SDLK_k: case SDLK_l: case SDLK_RETURN: case SDLK_KP_ENTER: return K_OK;
-    default: return K_NONE;
-    }
-}
-
 static int random_fighter(void)
 {
     int ids[12], n = 0;
     for (int id = 1; id <= 11; id++) if (fighter_exists(id)) ids[n++] = id;
     return n ? ids[rand() % n] : 1;
-}
-
-/* ---- options screen ---- */
-enum { OPT_DISPLAY, OPT_VSYNC, OPT_MUSIC, OPT_SFX, OPT_ROUNDS, OPT_TIME, OPT_RINGOUT, OPT_DIFF, OPT_RUMBLE, OPT_BACK, OPT_N };
-static const char *OPT_LABEL[OPT_N] = { "DISPLAY", "VSYNC", "MUSIC", "SOUND FX", "ROUNDS", "ROUND TIME", "RING OUT", "DIFFICULTY", "RUMBLE", "BACK" };
-
-static void option_value(int i, char *out, size_t n)
-{
-    switch (i) {
-    case OPT_DISPLAY: snprintf(out, n, "%s", g_cfg.fullscreen ? "FULLSCREEN" : "WINDOW"); break;
-    case OPT_VSYNC:   snprintf(out, n, "%s", g_cfg.vsync ? "ON" : "OFF"); break;
-    case OPT_MUSIC:   snprintf(out, n, "%d", g_cfg.music); break;
-    case OPT_SFX:     snprintf(out, n, "%d", g_cfg.sfx); break;
-    case OPT_ROUNDS:  snprintf(out, n, "BEST OF %d", g_cfg.rounds); break;
-    case OPT_TIME:    if (g_cfg.round_secs < 0) snprintf(out, n, "NO LIMIT"); else snprintf(out, n, "%d", g_cfg.round_secs); break;
-    case OPT_RINGOUT: snprintf(out, n, "%s", g_cfg.ringouts ? "ON" : "OFF"); break;
-    case OPT_DIFF:    snprintf(out, n, "%d", g_cfg.difficulty + 1); break;
-    case OPT_RUMBLE:  snprintf(out, n, "%s", g_cfg.rumble ? "ON" : "OFF"); break;
-    default: out[0] = 0;
-    }
-}
-
-static void option_change(int i, int d)
-{
-    static const int times[5] = { 30, 60, 90, 99, -1 };
-    switch (i) {
-    case OPT_DISPLAY: g_cfg.fullscreen = !g_cfg.fullscreen; break;
-    case OPT_VSYNC:   g_cfg.vsync = !g_cfg.vsync; break;
-    case OPT_MUSIC:   g_cfg.music = (g_cfg.music + d + 11) % 11; break;
-    case OPT_SFX:     g_cfg.sfx = (g_cfg.sfx + d + 11) % 11; sfx_set_volume((float)g_cfg.sfx / 10.0f); sfx_play(0, FS_SELECT); break;
-    case OPT_ROUNDS:  g_cfg.rounds = g_cfg.rounds == 1 ? (d > 0 ? 3 : 5) : g_cfg.rounds == 3 ? (d > 0 ? 5 : 1) : (d > 0 ? 1 : 3); break;
-    case OPT_TIME: {
-        int k = 1; for (int j = 0; j < 5; j++) if (times[j] == g_cfg.round_secs) k = j;
-        g_cfg.round_secs = times[(k + d + 5) % 5]; break; }
-    case OPT_RINGOUT: g_cfg.ringouts = !g_cfg.ringouts; break;
-    case OPT_DIFF:    g_cfg.difficulty = (g_cfg.difficulty + d + 8) % 8; g_fight.ai_level = g_cfg.difficulty; break;
-    case OPT_RUMBLE:
-        g_cfg.rumble = !g_cfg.rumble;
-        for (int p = 0; p < 2; p++) if (g_cfg.rumble && g_pad[p]) SDL_GameControllerRumble(g_pad[p], 0x8000, 0x8000, 200);
-        break;
-    default: return;
-    }
-    cfg_apply();
-}
-
-/* returns 0 to quit */
-static int front_key(SDL_Keycode k)
-{
-    int who, key = menu_key(k, &who);
-    if (g_state == ST_TITLE) {
-        if (key == K_BACK) return 0;
-        if (key != K_NONE || k == SDLK_RETURN) { sfx_play(0, FS_SELECT); set_state(ST_MENU); }
-        return 1;
-    }
-    if (g_state == ST_MENU) {
-        if (key == K_BACK) return 0;
-        if (key == K_UP || key == K_DOWN) { g_menu_sel = (g_menu_sel + (key == K_UP ? 3 : 1)) % 4; sfx_play(0, FS_MOVE); }
-        if (key == K_OK) {
-            sfx_play(0, FS_SELECT);
-            if (g_menu_sel == 3) return 0;
-            if (g_menu_sel == 2) { g_opt_sel = 0; set_state(ST_OPTIONS); return 1; }
-            g_two_players = g_menu_sel == 1;
-            g_pick[0] = g_pick[1] = 0; g_cur[0] = 0; g_cur[1] = 2;
-            set_state(ST_SELECT);
-        }
-        return 1;
-    }
-    if (g_state == ST_OPTIONS) {
-        if (key == K_BACK || (key == K_OK && g_opt_sel == OPT_N - 1)) { cfg_save(); sfx_play(0, FS_SELECT); set_state(ST_MENU); return 1; }
-        if (key == K_UP || key == K_DOWN) { g_opt_sel = (g_opt_sel + (key == K_UP ? OPT_N - 1 : 1)) % OPT_N; sfx_play(0, FS_MOVE); }
-        int d = key == K_LEFT ? -1 : (key == K_RIGHT || key == K_OK) ? 1 : 0;
-        if (d) { option_change(g_opt_sel, d); sfx_play(0, FS_MOVE); }
-        return 1;
-    }
-    if (g_state == ST_SELECT) {
-        if (key == K_BACK) {
-            if (g_pick[0] || g_pick[1]) { g_pick[0] = g_pick[1] = 0; sfx_play(0, FS_DENY); }
-            else set_state(ST_MENU);
-            return 1;
-        }
-        int p = g_two_players ? who : 0;
-        if (p < 0 || p > 1 || g_pick[p]) return 1;
-        int c = g_cur[p], col = c % GRID_COLS, rows = GRID_N / GRID_COLS;
-        if (key == K_LEFT)  c = c - col + (col + GRID_COLS - 1) % GRID_COLS;
-        if (key == K_RIGHT) c = c - col + (col + 1) % GRID_COLS;
-        if (key == K_UP)    c = (c + GRID_N - GRID_COLS) % GRID_N;
-        if (key == K_DOWN)  c = (c + GRID_COLS) % GRID_N;
-        (void)rows;
-        if (c != g_cur[p]) { g_cur[p] = c; sfx_play(0, FS_MOVE); }
-        if (key == K_OK) {
-            int id = GRID[c] ? GRID[c] : random_fighter();
-            if (!fighter_exists(id)) { sfx_play(0, FS_DENY); return 1; }
-            g_pick[p] = id;
-            sfx_play(0, FS_SELECT);
-            if (id <= 11) sfx_play(0, 12 + (id - 1) * 2);        /* announcer says the name */
-            g_state_t = 0;
-        }
-        return 1;
-    }
-    if (g_state == ST_ARENA) {
-        if (key == K_BACK) { g_pick[0] = g_pick[1] = 0; set_state(ST_SELECT); return 1; }
-        if (key == K_LEFT || key == K_UP)    { g_arena_sel = g_arena_sel <= 1 ? 11 : g_arena_sel - 1; sfx_play(0, FS_MOVE); }
-        if (key == K_RIGHT || key == K_DOWN) { g_arena_sel = g_arena_sel >= 11 ? 1 : g_arena_sel + 1; sfx_play(0, FS_MOVE); }
-        if (key == K_OK) { sfx_play(0, FS_SELECT); set_state(ST_VS); }
-        return 1;
-    }
-    if (g_state == ST_VS) {
-        if (key == K_OK && g_state_t > FIGHT_HZ / 2) start_vs_fight();
-        if (key == K_BACK) set_state(ST_MENU);
-        return 1;
-    }
-    return 1;
-}
-
-static void front_tick(void)
-{
-    g_state_t++;
-    if (g_state == ST_TITLE && g_state_t == 1) music_play(14);
-    if (g_state == ST_TITLE && g_state_t >= FIGHT_HZ * 5 / 2 + FIGHT_HZ / 3) set_state(ST_MENU);
-    if (g_state == ST_SELECT) {
-        int done = g_pick[0] && (g_pick[1] || !g_two_players);
-        if (done && g_state_t == FIGHT_HZ) {
-            if (g_two_players) set_state(ST_ARENA);
-            else { build_ladder(g_pick[0]); set_state(ST_VS); }
-        }
-    }
-    if (g_state == ST_VS) {
-        int a = g_pick[0], b = vs_opponent();
-        if (g_state_t == FIGHT_HZ / 4 && a <= 11) sfx_play(0, 12 + (a - 1) * 2);
-        if (g_state_t == FIGHT_HZ * 5 / 4) sfx_play(0, FS_VERSUS);
-        if (g_state_t == FIGHT_HZ * 2 && b >= 1 && b <= 11) sfx_play(0, 12 + (b - 1) * 2 + 1);
-        if (g_state_t == FIGHT_HZ * 4) start_vs_fight();
-    }
-}
-
-/* ---- drawing (640x480 virtual screen on top of frontend/back1.pix) ---- */
-static float blink(float speed) { return 0.55f + 0.45f * sinf((float)g_state_t * speed); }
-
-static void text_c(const char *s, float cx, float y, float sc, float a)
-{
-    ui_text(s, cx - ui_text_width(s, sc) * 0.5f, y, sc, a);
-}
-
-/* side panels of back1: inner black areas of "PLAYER A" (left) and "PLAYER B" (right) */
-static void draw_panel(int side, int id, int picked, const char *label)
-{
-    float x0 = side ? 497.f : 30.f, cx = x0 + 57.f;
-    const Sprite *pt = ui_sprite(PORTRAIT[id >= 0 && id <= 12 ? id : 0]);
-    ui_draw(pt, x0 + 2, 66, 0.86f, picked ? 1.f : 0.75f);
-    if (id > 0 && id <= 12) text_c(g_fname[id], cx, 184, 1.0f, picked ? 1.f : 0.8f);
-    if (picked) ui_frame(x0 + 1, 65, x0 + 113, 177, 2, 1, 0.85f, 0.2f, blink(0.25f));
-    if (label) ui_draw_c(ui_sprite(label), cx, 445, 1, 1);
-}
-
-static void render_front(int w, int h)
-{
-    glViewport(0, 0, w, h);
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    ui_begin(w, h);
-    if (g_state == ST_TITLE) {
-        ui_draw(ui_title(), 0, 0, 1, 1);           /* fxscreen.bmp: the original loading screen */
-        float p = (float)g_state_t / (float)(FIGHT_HZ * 5 / 2);
-        if (p > 1) p = 1;
-        ui_rect(178, 203, 178 + 270 * p, 249, 0.95f, 0.45f, 0.08f, 1);
-        ui_rect(178, 203, 178 + 270 * p, 210, 1, 0.75f, 0.3f, 1);
-        ui_end();
-        return;
-    }
-    ui_draw(ui_back(), 0, 0, 1, 1);
-    if (g_state == ST_MENU) {
-        static const char *items[4] = { "PLY1", "PLY2", "OPTIONS", "EXIT" };
-        for (int i = 0; i < 4; i++) {
-            float y = 140.f + (float)i * 64.f;
-            int sel = i == g_menu_sel;
-            ui_draw(ui_sprite(items[i]), 192, y, 1, sel ? 1.f : 0.45f);
-            if (sel) ui_frame(188, y - 4, 452, y + 36, 2, 1, 0.6f, 0.1f, blink(0.2f));
-        }
-        draw_panel(0, 0, 0, NULL); draw_panel(1, 0, 0, NULL);
-    } else if (g_state == ST_OPTIONS) {
-        ui_draw_c(ui_sprite("OPTIONS"), 320, 78, 1, 1);
-        for (int i = 0; i < OPT_N; i++) {
-            float y = 116.f + (float)i * 32.f + (i == OPT_BACK ? 10.f : 0.f);
-            int sel = i == g_opt_sel;
-            float a = sel ? 1.f : 0.6f;
-            if (sel) ui_rect(178, y - 5, 462, y + 17, 0.15f, 0.25f, 0.6f, 0.55f);
-            if (i == OPT_BACK) text_c(OPT_LABEL[i], 320, y, 0.75f, a);
-            else {
-                char v[32]; option_value(i, v, sizeof v);
-                ui_text(OPT_LABEL[i], 184, y, 0.75f, a);
-                ui_text(v, 456 - ui_text_width(v, 0.75f), y, 0.75f, a);
-            }
-            if (sel) ui_frame(178, y - 5, 462, y + 17, 2, 1, 0.6f, 0.1f, blink(0.2f));
-        }
-        draw_panel(0, 0, 0, NULL); draw_panel(1, 0, 0, NULL);
-        /* connected controllers */
-        for (int p = 0; p < 2; p++) {
-            float cx = p ? 554.f : 87.f;
-            ui_draw_c(ui_sprite(p ? "2P" : "1P"), cx, 420, 1, 1);
-            if (g_pad[p]) text_c("PAD", cx, 440, 0.75f, 1); else text_c("KEYS", cx, 440, 0.75f, 0.7f);
-        }
-    } else if (g_state == ST_SELECT) {
-        ui_draw_c(ui_sprite("CHOOSE"), 320, 70, 0.56f, 1);
-        for (int i = 0; i < GRID_N; i++) {
-            float x = 194.f + (float)(i % GRID_COLS) * 86.f, y = 90.f + (float)(i / GRID_COLS) * 86.f;
-            int id = GRID[i];
-            ui_draw(ui_sprite(PORTRAIT[id ? id : 12]), x, y, 0.625f, 1);
-            for (int p = 0; p < 1 + g_two_players; p++) {
-                if (g_cur[p] != i) continue;
-                float in = (p == 1 && g_cur[0] == i) ? 4.f : 0.f;
-                float a = g_pick[p] ? 1.f : blink(0.3f);
-                if (p == 0) ui_frame(x - 3 + in, y - 3 + in, x + 83 - in, y + 83 - in, 3, 1, 0.55f, 0.1f, a);
-                else        ui_frame(x - 3 + in, y - 3 + in, x + 83 - in, y + 83 - in, 3, 0.2f, 0.8f, 1, a);
-            }
-        }
-        int h0 = g_pick[0] ? g_pick[0] : GRID[g_cur[0]];
-        draw_panel(0, h0 ? h0 : 12, g_pick[0] != 0, "1P");
-        if (g_two_players) { int h1 = g_pick[1] ? g_pick[1] : GRID[g_cur[1]]; draw_panel(1, h1 ? h1 : 12, g_pick[1] != 0, "2P"); }
-        else draw_panel(1, 12, 0, "CPU");
-    } else if (g_state == ST_ARENA) {
-        char nm[16]; snprintf(nm, sizeof nm, "ARENA%d", g_arena_sel);
-        ui_draw_c(ui_sprite("ARENA"), 320, 78, 1, 1);
-        ui_draw(ui_sprite(nm), 192, 110, 1, 1);
-        ui_frame(190, 108, 450, 368, 2, 1, 0.55f, 0.1f, 1);
-        ui_draw_c(ui_sprite("CURSORL"), 196, 400, 1, blink(0.25f));
-        ui_draw_c(ui_sprite("CURSORR"), 444, 400, 1, blink(0.25f));
-        text_c(g_aname[g_arena_sel], 320, 392, 1, 1);
-        draw_panel(0, g_pick[0], 1, "1P"); draw_panel(1, g_pick[1], 1, "2P");
-    } else if (g_state == ST_VS) {
-        int a = g_pick[0], b = vs_opponent();
-        float t = (float)g_state_t / (float)FIGHT_HZ, s = t < 0.4f ? t / 0.4f : 1.f;
-        ui_draw(ui_sprite(PORTRAIT[a]), 180 - (1 - s) * 200, 92, 1, 1);
-        ui_draw(ui_sprite(PORTRAIT[b]), 332 + (1 - s) * 200, 292, 1, 1);
-        text_c(g_fname[a], 244, 226, 1, 1);
-        text_c(g_fname[b], 396, 426, 1, 1);
-        if (t > 1.1f) ui_draw_c(ui_sprite("VS"), 320, 262, 1, 1);
-        draw_panel(0, a, 1, "1P"); draw_panel(1, b, 1, g_two_players ? "2P" : "CPU");
-        if (!g_two_players) {            /* ladder progress */
-            char s2[32]; snprintf(s2, sizeof s2, "%d", g_ladder_pos + 1);
-            text_c(s2, 87, 404, 1, 1);
-        }
-    }
-    ui_end();
 }
 
 /* ---- 3D front end test (docs/FRONTEND.md, step 4): the strat VM runs FX_FE_TICKS ticks
@@ -1796,7 +1492,7 @@ static int fe_load(void)
     snprintf(exe, sizeof exe, "%sFIGHT.EXE", g_pac_dir);
     const char *err = "VM init failed";
     if (!fe_assets_load(&g_fe, &g_pac, exe, &err) || !fe_vm_init(&g_vm, &g_fe)) {
-        fprintf(stderr, "3D front end unavailable (%s), using the 2D menus\n", err);
+        fprintf(stderr, "3D front end unavailable (%s)\n", err);
         return 0;
     }
     g_vm.sys = fe_sys;
@@ -1892,7 +1588,7 @@ static void tour_result(int winner_side)
 }
 
 /* match asked for by START_GAME: 0 demo, 1 one player ladder, 2 two players,
- * 3 endurance / 4 tournament (not in the port yet: a one player ladder with the player's fighter) */
+ * 3 endurance / 4 tournament */
 static void fe_start_match(int m)
 {
     int p1 = g_vm.p1, p2 = g_vm.p2, ar = g_vm.arena;
@@ -2075,11 +1771,9 @@ int main(int argc, char **argv)
     size_t sz;
     const uint8_t *md = pac_get(&g_pac, "fight/boutgfx/material.mat", &sz);
     if (md) g_nmats = material_load_all(md, sz, g_mats, MAX_MATS);
-    ui_init(&g_pac);
-    load_names();
 
     float cli_pitch = -99, cli_dist = -1;
-    int arena = -1, p1 = -1, p2 = -1, ticks = 0, two_players = 0, demo = 0, screen = -1, menu2d = 0;
+    int arena = -1, p1 = -1, p2 = -1, ticks = 0, two_players = 0, demo = 0, screen = -1;
     const char *shot = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--arena") && i + 1 < argc) { arena = atoi(argv[++i]); g_debug_fight = 1; }
@@ -2096,12 +1790,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--2p")) { two_players = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--demo")) { demo = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--fight")) g_debug_fight = 1;
-        else if (!strcmp(argv[i], "--menu2d")) menu2d = 1;     /* the old 2D menus */
-        else if (!strcmp(argv[i], "--screen") && i + 1 < argc) {
-            static const char *names[] = { "title", "menu", "select", "arena", "vs", "options", "fe3d" };
-            for (int k = 0; k < 7; k++) if (!strcmp(argv[i + 1], names[k])) screen = k;
-            i++;
-        }
+        else if (!strcmp(argv[i], "--screen") && i + 1 < argc) { if (!strcmp(argv[++i], "fe3d")) screen = 1; }
     }
     md = pac_get(&g_pac, "fight/fighters/shadow0.dat", &sz);
     if (md) model_load_all(md, sz, &g_shadow, 1);
@@ -2122,11 +1811,11 @@ int main(int argc, char **argv)
         cfg_load();
         cfg_apply();
         for (int i = 0; i < SDL_NumJoysticks(); i++) pad_added(i);
-        if (!menu2d) g_fe_ok = fe_load();
+        if (!g_debug_fight) g_fe_ok = fe_load();
     }
     srand(shot ? 1234u : (unsigned)SDL_GetTicks() ^ 0x5eed);
 
-    if (g_debug_fight) {
+    if (g_debug_fight || (shot && screen < 0)) {
         if (p1 < 0) p1 = next_fighter(0, 1);
         if (p2 < 0) p2 = next_fighter(p1, 1);
         /* like the original: fight in the opponent's home arena (fighter n lives in arena n) */
@@ -2140,15 +1829,16 @@ int main(int argc, char **argv)
         if (getenv("FX_KEEP_YAW")) g_yaw = yaw;
         g_two_players = two_players;
     } else if (g_fe_ok) fe_enter();
-    else set_state(ST_TITLE);
+    else if (!shot) {                            /* the menus are the original's scripts: they need FIGHT.EXE */
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "FX Fighter Turbo",
+            "The menus need the original FIGHT.EXE next to FIGHT.PAC (see README.md).\n"
+            "A single fight without menus: fxfighter FIGHT.PAC --p1 1 --p2 2", win);
+        return 1;
+    }
 
     if (shot) {
-        if (screen == 6) return fe3d_shot(shot, win);   /* 3D front end, driven by the VM */
-        if (screen >= 0) {                       /* front end screenshots */
-            g_state = screen; g_two_players = 1;
-            g_pick[0] = 4; g_pick[1] = screen == 2 ? 0 : 6; g_cur[0] = 3; g_cur[1] = 7; g_menu_sel = 0;
-            g_arena_sel = 3; g_state_t = ticks ? ticks : 40;
-        } else if (ticks < 0) {                  /* --ticks -N: run until a ring-out, then N more ticks */
+        if (screen >= 0) return fe3d_shot(shot, win);   /* 3D front end, driven by the VM */
+        if (ticks < 0) {                  /* --ticks -N: run until a ring-out, then N more ticks */
             int t = 0, after = -1;
             while (t++ < 48 * 60 * 20 && after != 0) {
                 fight_tick(&g_fight); match_tick(); camera_step(0);
@@ -2157,7 +1847,7 @@ int main(int argc, char **argv)
                 if (after < 0 && g_fight.winner >= 0 && g_fight.ko_reason == 1) { after = -ticks; printf("ring out at tick %d\n", t); }
             }
         }
-        if (screen < 0) for (int t = 0; t < ticks; t++) { fight_tick(&g_fight); match_tick(); camera_step(0); g_fight.nsnd = 0; }
+        for (int t = 0; t < ticks; t++) { fight_tick(&g_fight); match_tick(); camera_step(0); g_fight.nsnd = 0; }
         return screenshot_mode(shot, win);
     }
     update_title(win);
@@ -2201,17 +1891,14 @@ int main(int argc, char **argv)
                 }
                 /* keys valid everywhere */
                 if (k == SDLK_m) music_toggle();
-                else if (k == SDLK_x && g_state != ST_FIGHT && g_state != ST_FE3D) sfx_toggle();
                 else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) { if (g_cfg.music > 0) g_cfg.music--; cfg_apply(); cfg_save(); }
                 else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) { if (g_cfg.music < 10) g_cfg.music++; cfg_apply(); cfg_save(); }
                 else if (k == SDLK_F11 || (k == SDLK_RETURN && (SDL_GetModState() & KMOD_ALT))) {
                     g_cfg.fullscreen = !g_cfg.fullscreen; cfg_apply(); cfg_save();
                 }
                 else if (g_state == ST_FE3D) { }
-                else if (g_state != ST_FIGHT) { if (!front_key(k)) running = 0; }
-                else if (k == SDLK_ESCAPE) {
-                    if (g_fe_ok) fe_enter();
-                    else { g_game = 1; g_debug_fight = 0; g_fight_paused = 0; set_state(ST_MENU); }
+                else if (k == SDLK_ESCAPE) {             /* the fight ends: back to the menus (no menus: quit) */
+                    if (g_fe_ok) fe_enter(); else running = 0;
                 }
                 else if (k == SDLK_p || k == SDLK_PAUSE) g_fight_paused = !g_fight_paused;
                 else if (k == SDLK_x) sfx_toggle();
@@ -2272,9 +1959,6 @@ int main(int argc, char **argv)
             while (acc >= FE_TICK && g_state == ST_FE3D) { if (!fe_tick()) running = 0; acc -= FE_TICK; }
             if (g_state != ST_FE3D) acc = 0;
             g_fe_alpha = (float)(acc / FE_TICK);   /* 15 Hz scripts, smooth drawing */
-            if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
-        } else if (g_state != ST_FIGHT) {
-            while (acc >= 1.0 / FIGHT_HZ) { front_tick(); acc -= 1.0 / FIGHT_HZ; }
             if (++title_cnt % 30 == 0) SDL_SetWindowTitle(win, "FX Fighter Turbo (open port)");
         } else if (g_game) {
             if (g_fight_paused) acc = 0;
