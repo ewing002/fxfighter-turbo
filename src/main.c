@@ -1253,8 +1253,17 @@ static void after_match(void)
         fight_reset(&g_fight); g_yaw_ofs = 0; camera_step(1);
         return;
     }
+    if (g_endu && g_fight.winner >= 0) {          /* status 5/6 "WINS endurance" (0x413e24, data 0x41970d) */
+        int w = g_fight.winner, l = w ^ 1;
+        g_endu = 0;
+        g_vm.G[59] = g_f[w].id << 16; g_vm.G[60] = g_f[l].id << 16;   /* winner's / loser's fighter */
+        g_vm.G[61] = w << 16; g_vm.G[62] = l << 16;                   /* their sides: 1P / 2P labels */
+        fe_enter_entry(7);                           /* WINNER / LOSER screen */
+        return;
+    }
     g_endu = 0;
     if (g_tour) { tour_result(g_fight.winner); return; }
+    if (g_fe_mode == 2) { fe_enter_entry(4); return; }   /* 2P: back to the 2P select (status 22, 0x414027) */
     if (g_fe_mode == 1 && g_fight.winner == 0 && ++g_ladder_pos < g_nladder) { start_vs_fight(); return; }
     if (g_fe_mode == 1 && g_fight.winner == 0) {   /* "1 Player HAS BEATEN AI" (0x413ea7) */
         int secs = (int)g_ladder_time;
@@ -1571,6 +1580,7 @@ static void fe_enter_entry(int entry)
     g_fe_mode = -1; g_endu = 0; g_tour = g_tour_vs = 0; g_game = 1; g_debug_fight = 0; g_fight_paused = 0;
     port_to_fecfg();
     hs_to_opt(&g_vm);                            /* 0x413cf9: on every return */
+    if (getenv("FX_AUTOTEST")) { printf("fe3d entry %d G59 %x G60 %x G61 %x G62 %x", entry, (unsigned)g_vm.G[59], (unsigned)g_vm.G[60], (unsigned)g_vm.G[61], (unsigned)g_vm.G[62]); puts(""); fflush(stdout); }
     fe_vm_restart(&g_vm, entry);
     memset(g_fe_latch, 0, sizeof g_fe_latch);
     g_fe_ticks = 0;

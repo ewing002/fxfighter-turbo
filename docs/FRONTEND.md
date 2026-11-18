@@ -136,7 +136,12 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      „TYPE: FLAT / GOURARD [TEXTURED]”) a textúra és az árnyalás kapcsolóiból jön; a port ezt követi (textúra helyett az
      anyagszín, sík helyett Gouraud-árnyalás csúcsnormálisokkal). Harc közben F1–F6 kapcsolja őket (`0x4414c7`, DI
      0x3B–0x40). A két padló-beállítás a portban csak tárolódik (`options.cfg`: `detail1..7`);
-   - a meccs után (vereség, 2P, bemutató, Esc) vissza a 3D menübe (G58 = 0);
+   - visszatérés a meccs után (`ProcessWrapperReturns`, `0x413d3d`, státusz → G58): bemutató vége (0), Esc (0), 1P game
+     over (10 → 0), létra vége (11 → 2, névbeírás), endurance vége (5/6 → 7: WINNER / LOSER képernyő; G59/G60 a győztes
+     és a vesztes harcosa, G61/G62 az oldaluk, `0x41970d`), torna (13 → 6), 2P meccs (22 → 4, a 2P választó). Nincs a
+     portban: a meccs utáni folytatás-képernyők (p1cont/p2cont/pncont), a kihívó becsatlakozása 1P játékba (20 → 3,
+     G67 = a létra helye, op ED / `FUN_0041a8ee`), a hálózat (23 → 5), és a létra végi / game over videó (`win.brp`)
+     meg a stáblista (`credits.txt`, `0x429800`);
    - rekordtábla (`0x4a7b40`, `fight/hiscores.dat`): 10 × 8 bájt, 3 betű, a harcos és az idő (DOS-tick, 18,2 Hz,
      16.16). A front end minden indulásakor és visszatérésekor az OPT[0..19]-be kerül (`FUN_0043b513`: OPT[i] = a
      betűk − 'A' a felső három bájtban, a harcos az alsóban; OPT[10+i] = az idő számjegyei P P M M bájtonként), az
@@ -156,8 +161,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a létra folytatása (ED, G67),
-   a visszatérés pontos belépési módja (G58) a meccs után.
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a folytatás-képernyők és a kihívó (ED, G67), a videók és a stáblista.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
    `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü
