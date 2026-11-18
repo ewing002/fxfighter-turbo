@@ -7,7 +7,9 @@
  * side panels (parallel cameras), then THE_WORLD over the whole screen (perspective camera).
  */
 #include "fe3d_gl.h"
+#include <SDL.h>
 #include <SDL_opengl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -112,6 +114,32 @@ static int find_mat(const FeAssets *fe, const char *name)
     return -1;
 }
 
+/* op 0x97 state of the frame: FRONTA..D material, the map it shows, transform mode */
+static int g_front_mat[4] = { -2, -2, -2, -2 }, g_face_tex[4] = { -1, -1, -1, -1 }, g_face_mode[4];
+
+static int find_mat_ci(const FeAssets *fe, const char *name)
+{
+    for (int i = 0; i < fe->nmats; i++) if (!SDL_strcasecmp(fe->mats[i].name, name)) return i;
+    return -1;
+}
+
+static void faces_update(const FeAssets *fe, const FeScene *sc)
+{
+    static const char *FRONT[4] = { "FRONTA", "FRONTB", "FRONTC", "FRONTD" };
+    for (int k = 0; k < 4; k++) {
+        if (g_front_mat[k] == -2) g_front_mat[k] = find_mat_ci(fe, FRONT[k]);
+        g_face_tex[k] = -1;
+        if (sc->face_src[k] < 0) continue;
+        char nm[16];
+        if (sc->face_src[k] == 0) snprintf(nm, sizeof nm, "FRONTBACKUP");
+        else snprintf(nm, sizeof nm, "ARENA%d", sc->face_src[k]);
+        int src = find_mat_ci(fe, nm);               /* missing source: unchanged, as BrMaterialFind fails */
+        if (src < 0 || g_front_mat[k] < 0) continue;
+        g_face_tex[k] = fe->mat_map[src];
+        g_face_mode[k] = sc->face_mode[k];
+    }
+}
+
 static void draw_model(const FeAssets *fe, const Model *m)
 {
     for (int i = 0; i < m->nfaces; i++) {
@@ -119,6 +147,9 @@ static void draw_model(const FeAssets *fe, const Model *m)
         if (f->v[0] >= m->nverts || f->v[1] >= m->nverts || f->v[2] >= m->nverts) continue;
         int mi = (f->mat && f->mat <= m->nmats) ? find_mat(fe, m->mats[f->mat - 1]) : -1;
         int tex = mi >= 0 && fe->mat_map[mi] >= 0 && m->uvs ? fe->mat_map[mi] : -1;
+        int xf = -1;                                  /* 0: u,v -> -u,-v; 1: u -> -u (wrapped into 0..1) */
+        for (int k = 0; k < 4 && mi >= 0; k++)
+            if (mi == g_front_mat[k] && g_face_tex[k] >= 0 && m->uvs) { tex = g_face_tex[k]; xf = g_face_mode[k] ? 1 : 0; }
         if (tex >= 0 && g_tex[tex]) {
             glEnable(GL_TEXTURE_2D);
             glEnable(GL_ALPHA_TEST);
@@ -137,7 +168,11 @@ static void draw_model(const FeAssets *fe, const Model *m)
         glNormal3f(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
         for (int k = 0; k < 3; k++) {
             int vi = f->v[k];
-            if (tex >= 0) glTexCoord2f(m->uvs[vi].u, m->uvs[vi].v);
+            if (tex >= 0) {
+                float u = m->uvs[vi].u, v = m->uvs[vi].v;
+                if (xf >= 0) { u = 1.0f - u; if (xf == 0) v = 1.0f - v; }
+                glTexCoord2f(u, v);
+            }
             glVertex3f(m->verts[vi].x, m->verts[vi].y, m->verts[vi].z);
         }
         glEnd();
@@ -182,6 +217,7 @@ void fe_gl_render(const FeAssets *fe, const FeScene *sc, int w, int h)
     float ox = ((float)w - 640.f * s) * 0.5f, oy = ((float)h - 480.f * s) * 0.5f;
 #define VP(x, y, ww, hh) glViewport((GLint)(ox + (x) * s), (GLint)((float)h - oy - ((y) + (hh)) * s), (GLsizei)((ww) * s), (GLsizei)((hh) * s))
 
+    faces_update(fe, sc);
     glViewport(0, 0, w, h);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

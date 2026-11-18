@@ -22,6 +22,9 @@ typedef struct {
 typedef struct {
     FeNode n[FE_MAX_NODES];
     int    count;
+    /* op 0x97 (FUN_00409d15): material FRONTA..D takes the colour map of FRONTBACKUP (0) or
+     * ARENAn (n), its map transform rotated 180 degrees (mode 0) or mirrored in u; -1 = untouched */
+    int    face_src[4], face_mode[4];
 } FeScene;
 
 void fe_gl_init(const FeAssets *fe);     /* uploads the textures (needs a GL context) */

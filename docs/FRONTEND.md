@@ -80,7 +80,12 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - E4 (nyers billentyű): az eredeti blokkol, itt a művelet a következő tickben újrapróbál
      (`fe_vm_key_raw`, DirectInput-kódok);
    - kamerák (0x96, 0x2A): nincs hatásuk, a renderelő kamerái rögzítettek;
-   - háttér (0x97): csak feljegyzés (`bg[]`), a felső doboz textúracseréje még nincs bekötve;
+   - lapcsere (0x97, `FUN_00409d15`): a FRONTA–D anyag (a felső és az alsó doboz lapjai) megkapja a forrásanyag
+     színtérképét: 0 = FRONTBACKUP (OPTI1), n = ARENAn (256×256-os arénakép a `demo.pix`-ben); a térképtranszformáció
+     0-s módban 180°-os forgatás, különben tükrözés u-ban (BrMatrix23Scale(−1, 1)). A gyökérszkript induláskor mind a
+     négy lapot FRONTBACKUP-ra állítja; a 2P arénaválasztó (15-ös szkript) az alsó kártya 2. és 3. lapját felváltva a
+     kiválasztott aréna képére cseréli, miközben a kártya átfordul (G72 = 8/9). A port a jelenetben (`FeScene.face_*`)
+     adja át, a renderelő a lap UV-it transzformálja;
    - rendszerműveletek (D8–E0, E9/EA, EC/ED): a cfg ↔ G átírást a VM végzi, a fájl-, hangerő- és
      zenekezelés a gazdára vár (`sys` visszahívás);
    - a 12/13-as triggertípusok nem sülnek el, ütközés nincs (egy szkript sem állít maszkot);
@@ -141,7 +146,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: játéksebesség (EC), részletesség, a létra folytatása (ED, G67), a felső doboz képcseréje (0x97),
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: játéksebesség (EC), részletesség, a létra folytatása (ED, G67),
    a visszatérés pontos belépési módja (G58) a meccs után.
 6. A régi 2D-s menük kivezetése, amikor a 3D front end mindent tud.
 

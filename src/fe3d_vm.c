@@ -1255,6 +1255,7 @@ void fe_vm_scene_lerp(const FeVm *vm, FeScene *sc, float t)
 {
     static int node_of[FEVM_MAX_ACTORS];
     sc->count = 0;
+    for (int k = 0; k < 4; k++) { sc->face_src[k] = vm->bg[k].dirty ? vm->bg[k].map : -1; sc->face_mode[k] = vm->bg[k].mode; }
     for (int i = 0; i < FEVM_MAX_ACTORS; i++) {
         node_of[i] = -1;
         if (!vm->a[i].live || sc->count >= FE_MAX_NODES) continue;
