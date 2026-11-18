@@ -34,6 +34,7 @@
 #include "audio.h"
 #include "ui.h"
 #include "video.h"
+#include "sprfx.h"
 
 #define MAX_PARTS 32
 #define MAX_MATS  256
@@ -114,6 +115,7 @@ static int  g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
 static int  g_pad_dir[2][2];                    /* last stick direction per pad (menu navigation) */
 static int  g_last_health[2];
+static int  g_hidden[2];                         /* 0x4a8828: fighter not drawn yet (beaming in) */
 static int  g_fe_ok, g_fe_mode = -1;            /* 3D front end loaded; mode of the match it started, -1 = none */
 static void fe_enter(void);
 static void fe_enter_entry(int entry);
@@ -870,11 +872,15 @@ static void render(int w, int h)
     g_floor_pass = 0;
     Pose p0 = g_game ? game_pose(0) : viewer_pose(&g_f[0], -1);
     Pose p1 = g_game ? game_pose(1) : viewer_pose(&g_f[1], +1);
-    draw_shadow(p0); draw_shadow(p1);
+    int show0 = !g_game || !g_hidden[0], show1 = !g_game || !g_hidden[1];
+    if (show0) draw_shadow(p0);
+    if (show1) draw_shadow(p1);
     for (int i = 0; i < 2; i++) {                 /* per player detail (0x402004) */
+        if (!(i ? show1 : show0)) continue;
         g_draw_mode = (g_cfg.det[2 * i] ? DM_TEX : 0) | (g_cfg.det[2 * i + 1] ? DM_SMOOTH : 0);
         draw_fighter(&g_f[i], i ? p1 : p0);
     }
+    if (g_game) sprfx_draw(g_eye, g_cdir);          /* sparks, blood, special effects (.slb) */
     g_draw_mode = DM_TEX;
     glDisable(GL_LIGHTING);
     if (g_game) draw_hud(w, h);
@@ -924,6 +930,22 @@ static int try_open_pac(int argc, char **argv)
     return 0;
 }
 
+/* sprite effects after a fight tick: the requests of this tick (0x44c759 replays the queue), then
+ * one tick for every sprite (0x44e9ea with dt in ticks) */
+static void fx_tick(void)
+{
+    /* 0x444f54: the fighters appear 0x1fd999 PIT ticks (about 1.75 s, real time) after the round started,
+     * when the teleport beam is at its widest */
+    int pit = g_fight.tick_pit > 0 ? g_fight.tick_pit : 24850;
+    if ((g_hidden[0] || g_hidden[1]) && (long long)g_fight.round_age * pit > 0x1fd999) g_hidden[0] = g_hidden[1] = 0;
+    for (int k = 0; k < g_fight.nfx; k++)
+        sprfx_trigger(&g_fight, g_fight.fx[k].player, g_fight.fx[k].group, g_fight.fx[k].id);
+    g_fight.nfx = 0;
+    sprfx_update(&g_fight, 1.0f, g_eye, g_cdir);
+}
+
+static int g_tele = 3;                          /* players that beam in at the next restart_fight() */
+
 static void restart_fight(void)
 {
     for (int i = 0; i < 2; i++)
@@ -936,6 +958,15 @@ static void restart_fight(void)
     g_fight.ringouts = g_ringouts;
     fight_reset(&g_fight); floor_anim_reset(&g_arena);
     g_yaw_ofs = 0;
+    /* the match's sprite libraries (0x433350) and the teleport of the fighters entering (0x44cd7c:
+     * both at the start of a match, only the newcomer of an endurance bout) */
+    sprfx_load(&g_pac, g_f[0].id, g_f[1].id, g_arena.id, g_arena.pal);
+    g_fight.nfx = 0;
+    for (int i = 0; i < 2; i++) {               /* 0x444ea6 hides the beaming fighters (actor type 0) */
+        g_hidden[i] = g_tele >> i & 1;
+        if (g_hidden[i]) sprfx_trigger(&g_fight, i, -2, 0x2d);
+    }
+    g_tele = 3;
     music_play(g_arena.id + 2);                 /* FIGHT.EXE: CD track = arena + 2 */
     sfx_bank_load(0, g_tour ? "tour" : "generic");   /* 0x413a6d: tour.fxl = generic + the fighter names */
     g_bank0_front = 0;
@@ -1950,7 +1981,7 @@ static void after_match(void)
 {
     if (g_debug_fight) {                            /* command line fight: keep going */
         g_fight.p[0].wins = g_fight.p[1].wins = 0; g_round = 1;
-        fight_reset(&g_fight); floor_anim_reset(&g_arena); g_yaw_ofs = 0; camera_step(1);
+        fight_reset(&g_fight); floor_anim_reset(&g_arena); sprfx_clear(); g_yaw_ofs = 0; camera_step(1);
         return;
     }
     if (g_endu && g_fight.winner >= 0) {          /* status 5/6 "WINS endurance" (0x413e24, data 0x41970d) */
@@ -1999,6 +2030,7 @@ static void endurance_next(void)
     if (lose == 0) g_f[0].id = 0;                   /* fighter_load: no mirror costume for player 1 */
     fighter_load(&g_f[lose], id, g_arena.pal);
     g_fight.p[lose].cpu = !g_endu_human[lose][g_endu_pos[lose]] || (lose == 0 && getenv("FX_AUTOTEST"));
+    g_tele = 1 << lose;
     restart_fight();                                 /* new bout: both back to the start */
     g_fight.p[win].health = keep;                    /* 0x4cb480: only the loser's health is reset */
     for (int i = 0; i < 2; i++) g_fight.p[i].wins = g_endu_n[i] - 1 - g_endu_pos[i];
@@ -2038,7 +2070,7 @@ static void match_tick(void)
     if (g_fight.winner >= 0 && g_fight.over_timer <= 0) {
         int need = g_fe_mode == 0 ? 1 : g_cfg.rounds / 2 + 1;   /* attract demo: one round */
         if (g_fight.p[0].wins >= need || g_fight.p[1].wins >= need) g_match_over_t = 3 * FIGHT_HZ;
-        else { g_round++; fight_reset(&g_fight); floor_anim_reset(&g_arena); g_yaw_ofs = 0; camera_step(1); }
+        else { g_round++; fight_reset(&g_fight); floor_anim_reset(&g_arena); sprfx_clear(); g_yaw_ofs = 0; camera_step(1); }
     }
 }
 
@@ -2679,13 +2711,13 @@ int main(int argc, char **argv)
         if (ticks < 0) {                  /* --ticks -N: run until a ring-out, then N more ticks */
             int t = 0, after = -1;
             while (t++ < 48 * 60 * 20 && after != 0) {
-                fight_tick(&g_fight); match_tick(); camera_step(0);
+                fight_tick(&g_fight); match_tick(); camera_step(0); fx_tick();
                 g_fight.nsnd = 0;
                 if (after > 0) after--;
                 if (after < 0 && g_fight.winner >= 0 && g_fight.ko_reason == 1) { after = -ticks; printf("ring out at tick %d\n", t); }
             }
         }
-        for (int t = 0; t < ticks; t++) { fight_tick(&g_fight); match_tick(); camera_step(0); g_fight.nsnd = 0; }
+        for (int t = 0; t < ticks; t++) { fight_tick(&g_fight); match_tick(); camera_step(0); fx_tick(); g_fight.nsnd = 0; }
         return screenshot_mode(shot, win);
     }
     update_title(win);
@@ -2822,6 +2854,7 @@ int main(int argc, char **argv)
                 g_fight.nsnd = 0;
                 match_tick();
                 camera_step(0);
+                fx_tick();
                 acc -= tick_secs();
             }
             if (++title_cnt % 15 == 0) update_title(win);

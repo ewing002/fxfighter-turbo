@@ -41,7 +41,8 @@ Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a máso
 és a 2 játékos harcosválasztó jön (a port bővítése; `challenger=0` kikapcsolja).
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
-Még hiányzik: nincs hálózati játék, és a sprite-effektek (ütésszikra, vér, lövedékek képe) sem látszanak.
+Az eredeti sprite-effektjei (`fight/sfx/*.slb`) is látszanak: blokk-szikra, vér, a különleges mozdulatok lángjai és szikrái,
+vízi arénában a fröccsenés, a meccs elején a teleport. Még hiányzik: nincs hálózati játék.
 Harc közben F1–F4 a két harcos textúráját és árnyalását kapcsolja, F5 a padlótextúrát (ki / be / perspektivikus), F6 a hátteret.
 A padló részletessége (`detail6` az `options.cfg`-ben, 0–2) az aréna betöltésekor hat; 0-nál, mint az eredetiben,
 nincs padlómodell, és ringből kiesés sincs.
@@ -110,6 +111,7 @@ cmake -S . -B build && cmake --build build
 MinGW-vel kereszt-fordítva:
 ```
 x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I<SDL2>/include/SDL2 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c ^
+  src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c ^
   -L<SDL2>/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o fxfighter.exe
 ```
 
@@ -119,6 +121,7 @@ x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I<SDL2>/include/SDL2 src/ma
 - `src/tables.h`: az EXE statikus táblái (testrészcsoportok, reakciótáblák)
 - `src/main.c`: renderelés, kamera, bemenet, HUD, a 3D menü bekötése és a meccslogika, néző
 - `src/ui.[ch]`: a harc 2D sprite-jai (`boutgfx/*.pix`) 640×480-as virtuális képernyőn
+- `src/sprfx.[ch]`: a harc sprite-effektjei (`fight/sfx/*.slb`: szikra, vér, mozdulat-effektek, teleport)
 - `src/fe3d*.[ch]`: a 3D menü (eszközök, szkript-VM, renderelő)
 - `src/audio.[ch]`, `src/dr_mp3.h`: zene (MP3, dr_mp3 v0.7.2, public domain / MIT-0) és hangeffekt-keverő, `.asf`-dekóder
 - `tests/fightsim.c`: fej nélküli harcszimuláció (két CPU), regressziós teszthez

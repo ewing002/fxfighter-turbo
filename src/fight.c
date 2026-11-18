@@ -134,6 +134,16 @@ static void emit_sound(Fight *f, int bank, int index)
 }
 
 /* fighter sound: < 0x80 the player's own bank (1-based), 0x80.. the arena bank (0-based), >= 0xf0 none */
+/* 0x44c666: a sprite effect request; the queue holds 4 per frame */
+static void emit_fx(Fight *f, int player, int group, int id)
+{
+    if (f->nfx >= 4 || id < 0) return;
+    f->fx[f->nfx].player = (int8_t)(player & 1);
+    f->fx[f->nfx].group = (int8_t)group;
+    f->fx[f->nfx].id = (uint8_t)id;
+    f->nfx++;
+}
+
 static void fighter_sound(Fight *f, int i, int s)
 {
     if (s <= 0 || s >= 0xf0) return;
@@ -189,6 +199,19 @@ void fight_joint(const Fight *f, int i, int part, float out[3])
     float m[4][3] = { { 0 } };
     if (fr) ani_bone_matrix(fr, part, m);
     fight_to_world(f, i, m[3], out);
+}
+
+void fight_bone(const Fight *f, int i, int part, float m[4][3])
+{
+    const AniFrame *fr = player_frame(&f->p[i]);
+    float b[4][3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 0, 0, 0 } };
+    if (fr) ani_bone_matrix(fr, part, b);
+    float a = look_yaw(f, i), c = cosf(a), s = sinf(a);
+    for (int k = 0; k < 3; k++) {
+        float x = b[k][0], y = b[k][1];
+        m[k][0] = x * c - y * s; m[k][1] = x * s + y * c; m[k][2] = b[k][2];
+    }
+    fight_to_world(f, i, b[3], m[3]);
 }
 
 static float gap(const Fight *f, int i)          /* signed distance to the opponent along the line */
@@ -368,6 +391,7 @@ static int hit_test(Fight *f, int i, int damage, int dir)
             /* zone from the CENTRE height of the victim's part, around 0x9999 (0.6):
              * below 0.4 low, below 1.0 mid, else high */
             f->hit_zone[i] = b.c[2] < 0.4f ? 2 : (b.c[2] < 1.0f ? 1 : 0);
+            f->hit_part[i] = VICTIM_PARTS[k];
             if (getenv("FX_TRACE"))
                 fprintf(stderr, "HIT P%d %s -> part %d zone %d dmg %d\n", i + 1, md->name, VICTIM_PARTS[k], f->hit_zone[i], damage);
             return 1;
@@ -455,6 +479,7 @@ static void process_events(Fight *f, int i)
             else if (op == 0xde) fighter_sound(f, i, r->tgt);
             else if (op == 0xdc) { p->health += 30; if (p->health > MAX_HEALTH) p->health = MAX_HEALTH; }
             else if (op == 0xe0) p->frame = r->fr;
+            else if (op == 0xe1) emit_fx(f, i, r->cond & 0x3f, r->tgt & 0xff);   /* sprite effect on a bone group */
             else if (op == 0xe8) {                   /* set fighter distance (throws) */
                 float want = (float)((int)r->tgt << 9) / 65536.0f, g = gap(f, i);
                 if (f->thrower == 2) want += 0.1f;    /* the last throw was player 2's (a8344 == 2) */
@@ -556,7 +581,8 @@ static void resolve_hit(Fight *f, int i)
     start_move(f, i ^ 1, react);
     /* knock back 0.1 / 0.2 / 0.3 by hit direction */
     if (dir < 3) push_apart(f, i ^ 1, 0.1f * (float)(dir + 1));
-    if (rec(v, v->sp)->op < 0xfa) {
+    int wounded = rec(v, v->sp)->op < 0xfa;
+    if (wounded) {
         float k = v->fi ? v->fi->stun_k : 3.f;
         if (!was_react) {                          /* clean hit: full damage and stun */
             v->combo = 0;
@@ -571,6 +597,9 @@ static void resolve_hit(Fight *f, int i)
         if (v->health < 0) v->health = 0;
         v->hit_flash = 8;
     }
+    /* blood 1..4 (0x17) on a hit, block sparks 1..4 (0x13) when the reaction blocks it, by the
+     * attack's direction, on the victim's body part that was hit */
+    emit_fx(f, i ^ 1, f->hit_part[i], (wounded ? 0x17 : 0x13) + dir);
     if (v->stun > 75.f && v->health > 0) {         /* dazed (0x496b98) */
         v->stun = 0;
         if (vcls != 3) start_move(f, i ^ 1, MOVE_DAZE);

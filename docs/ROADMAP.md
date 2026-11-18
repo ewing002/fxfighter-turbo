@@ -24,6 +24,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 | `0x41d5b0` | háttér: a kamerához rögzített `bground.dat` sáv, kameraforduló = 320 egység görgetés |
 | `0x4221b2` | kamerarendező: mozdulatkamera; ring széle (harcos a széltől 1,8-on belül, távolság < 4: szög 90 ± 12·(3,5 − táv), dőlés 83 − 8·(3,5 − táv)), ha a részletesség (`0x4a5888`) ≥ 1 |
 | `0x421728` | rögzített nézetek: Home be/ki (`4a4be0`), Ins/Del a 8–15. előbeállítás, PgUp/PgDn távolság (2–8), nyilak szög/dőlés (30–80) |
+| `0x44c666` / `0x44cba0` / `0x44d868` | sprite-effekt kérése (sor, képkockánként 4), indítása, a `.slb` szkript értelmezője (`src/sprfx.c`) |
+| `0x433350` / `0x433630` | a meccs `.slb` könyvtárainak betöltése, effekt keresése azonosító és játékos szerint |
 | `0x4491f7` | találatvizsgálat: a támadó végtagjainak dobozai összevonva (`0x448a69`, z-ben a kisebbik felső határ) + az előző vizsgálat doboza (söprés); zóna a talált kocka középpontjából |
 | `0x43fbca` / `0x4408f9` / `0x43f36e` | taszítás, ringhatár (a harcvonal mentén mérve), ringből kiesés (csak a középtől messzebb lévő harcos) |
 | `0x440f42` | ugrás és földet érés (a8290: függőleges eltolás, a legalsó láb a talajra igazítva) |
@@ -39,7 +41,8 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
    folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla (✅ a 3D menüben)
 5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó, menühangok. Az eredeti nem használ térhatást (nincs
    pan, hangmagasság vagy távolság szerinti halkítás); a `.slb` fájlok nem hangparaméterek, hanem sprite-effektkönyvtárak
-   (⏳ blokk-szikrák, vér, lövedékek, teleport: `Sprlib.c` / `Sprplay.c`, lásd `docs/FORMATS.md`)
+   (✅ `src/sprfx.c`: blokk-szikrák, vér, a különleges mozdulatok effektjei, vízi fröccsenés, teleport; lásd `docs/FORMATS.md`.
+   A lövedékek (`Sfxproj.c`) halott kód: a Turbo mozdulattáblái nem indítják őket)
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
    a `0x424d8f` ringszél-vizsgálat is az eredeti szerint (a követett medencétől 2 egységre: balra, jobbra vagy hátra)
 7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó (✅ `src/video.c`).

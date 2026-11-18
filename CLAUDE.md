@@ -12,6 +12,7 @@ Az eredeti Windows-os FX Fighter Turbo újraírása modern rendszerre. Új C/SDL
 - `src/fight.[ch]` – harcmotor (mozgás, találat, állapotgép)
 - `src/audio.[ch]` – hangkeverő, ASF-dekóder, zene (`dr_mp3.h`)
 - `src/ui.[ch]` – a harc 2D sprite-jai (boutgfx), 640×480 virtuális képernyő
+- `src/sprfx.[ch]` – sprite-effektek (`fight/sfx/*.slb`): blokk-szikra, vér, mozdulat-effektek, teleport
 - `src/main.c` – renderelés, kamera, menük, meccslogika, bemenet, opciók
 - `src/fe3d.[ch]` – a 3D front end: jelenet-assetek és a szkript-bájtkód a `FIGHT.EXE`-ből (készül, lásd `docs/FRONTEND.md`)
 - `src/fe3d_gl.[ch]` – a 3D front end renderelője (háttér, két párhuzamos oldalnézet, fő perspektivikus nézet)
@@ -36,7 +37,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
   ```
   S=<sdl2>/x86_64-w64-mingw32
   x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I$S/include/SDL2 \
-    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c \
+    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c \
     -L$S/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o bin-win64/fxfighter.exe
   ```
   A `SDL2.dll` a `bin-win64/` mappában van.
@@ -45,7 +46,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
   export PATH=/c/msys64/mingw64/bin:$PATH
   mkdir -p build-win
   gcc -O2 -std=c11 -Dmain=SDL_main -I/c/msys64/mingw64/include/SDL2 \
-    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c \
+    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c \
     -L/c/msys64/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o build-win/fxfighter.exe
   gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o build-win/fs.exe
   gcc -O2 -Isrc tests/fecheck.c src/fe3d.c src/assets.c -lm -o build-win/fecheck.exe
@@ -80,7 +81,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 6. **Folytatás, stáblista, FMV:** a CONTINUE képernyő, a rekordtábla, a videók (`src/video.c`, a CD-ről `tools/rip_video.py`-jal) és a stáblista kész. Tesztben a videók nem futnak (`FX_AUTOTEST`), csak `FX_VIDEOTEST=1`-gyel; `FX_NOVIDEO=1` kikapcsolja őket.
 7. **Színezés:** az eredeti BRender-indexvilágítás CPU-n számolva (`shade_of` / `shade_l` a `src/main.c`-ben; leírás: `docs/FORMATS.md`, „Színezés”). A megvilágított textúrákat a `colmap` sorának fényerejével modulálja, a 48 fölötti sorok kifehéredése (csillanás) hiányzik; az eredeti affin textúrázása sincs meg.
 8. **Háttér és padló:** a háttér helyzete, a padló-részletesség három beállítása és a padló-animáció (`0x428f0a`, 0xa és 0xb aréna) az eredeti szerint kész.
-9. **Sprite-effektek (`.slb`):** blokk-szikrák, vér, lövedékek, teleport (`Sprlib.c` / `Sprplay.c`) – még nincsenek a portban, lásd `docs/FORMATS.md`.
+9. **Sprite-effektek (`.slb`):** kész (`src/sprfx.c`): blokk-szikra és vér a találatnál, a `0xe1` mozdulat-esemény effektjei (töltés, torkolattűz, fúvókák, vízi fröccsenés), teleport a meccs elején (a harcosok és árnyékuk 1,75 mp-ig, a csóva legszélesebb pontjáig láthatatlanok, `0x444ea6` / `0x444f54`). A harcmotor a kéréseket a `Fight.fx` sorba teszi (képkockánként 4), a `main.c` minden tick után indítja és lépteti őket. `FX_SPRTRACE=1` kiírja a kéréseket. A lövedékek (`Sfxproj.c`) halott kód: egyik mozdulattábla sem indítja őket. Nyitott: a 2–4-es fajtájú sprite-ok elforgatása (Euler-szög) csak az eredeti képletéből van, élő összevetés nélkül.
 
 ## Nyitott kérdések (a felhasználótól)
 - Az ugrás közben tiltott ringből való kiesés saját döntés, nem az eredetiből származik.

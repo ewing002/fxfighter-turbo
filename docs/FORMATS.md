@@ -232,15 +232,56 @@ Lejátszás (`FUN_00435eb4(bank, index)`): a mozdulat 0x18-as mezője a `StartMo
 < 0x80: a játékos saját bankja (1-alapú), 0x80–0xEF: az arénabank (0-alapú), ≥ 0xF0: nincs hang.
 A találati hangokat a reakciómozdulatok saját hangmezője adja (pl. HIT FACE L = 1 = `mag_l5`).
 
-### `*.slb` – sprite-effektkönyvtárak ❌
-Nem hangparaméterek: látványeffektek (`Sprlib.c`, `Sprplay.c`; a „sfx” itt special effects). Fejléc: `u32 verzió = 1,
-u32 npix`, aztán három tömb (`u32 darab, u32 elemméret`): parancsok (0x24 bájt, az effekt szkriptje), kibocsátók (0x44
-bájt, részecskék) és effektbejegyzések (0x20 bájt: `u32 azonosító 0..255, u32 első parancs, char név[24]`), végül
-`npix` BRender-pixelmap (0x18 bájtos fej, 8 bites indexelt, PackBits-változat `0x42e5c9`). Értelmező: `0x44d868`
-(1 képkocka mutatása, 2 ugrás, 3 vége, 4 kibocsátó egy csontcsoporthoz, 5 gyereksprite). Betöltés: `0x433350`
-(25 elemű tábla `0x4a6b10`, játékosonkénti azonosítótábla `0x4bd9a8`, keresés `0x433630`). Tartalom: generic
-Block 1–4, harcosonként Blood 1–4 és a saját lövedék-, töltés- és találateffektek, arénák lépés/landolás/fröccsenés,
-teleport. A port még nem rajzolja őket.
+### `*.slb` – sprite-effektkönyvtárak ✅
+Nem hangparaméterek: látványeffektek (`Sprlib.c`, `Sprplay.c`, `Sfxroot.c`, `Effects.c`; a „sfx” itt special effects).
+A port: `src/sprfx.c`. Fejléc: `u32 verzió = 1, u32 npix`, aztán három tömb (`u32 darab, u32 elemméret`): parancsok
+(0x24 bájt), kibocsátók (0x44 bájt) és effektbejegyzések (0x20 bájt: `u32 azonosító 0..255, u32 első parancs, char név[24]`),
+végül `npix` pixelmap: 0x18 bájtos fej (`s16 sorhossz, u8 típus = 3 (8 bites indexelt), u8, u16 bázis x/y, u16 szélesség/magasság,
+s16 origó x/y, u32 tömörített méret, u32 kibontott méret`), utána a `0x42e5c9` PackBits-változata: `c = ~(int8)b`; `c > 0`: `c+1`
+szó szerinti bájt, `c == -128`: vége, különben a következő bájt `1-c`-szer; minden tárolt érték a pixel + 1. A 0-s index átlátszó.
+
+**Parancsok** (9 dword, értelmező `0x44d868`, az időegység a harc tickje, 48 Hz):
+| típus | jelentés |
+|---|---|
+| 1 | képkocka: `[1]` pixelmap, `[2]` float idő (tick), `[3..8]` 16.16-os 2×3-as mátrix (a négyzet helye és mérete a kamerasíkban) |
+| 2 | ugrás `[1]`-re, ha `[2] == -1` |
+| 3 | vége: a sprite megszűnik |
+| 4 | kibocsátó `[1]` a `[2]` csontcsoport minden csontján, `[3..5]` eltolás, `[6]` részecskeszám |
+| 5 | gyereksprite: `[1]` kezdő parancs, `[2]` csontcsoport, `[3..5]` eltolás, `[6]` fajta, `[7]` kamera felé húzás (16.16) |
+
+Csontcsoport: a `0x4aa510` tábla sora (`u8 darab, csontok`; a 0..15 sorok az egyes testrészek, a 16..63 sorok csoportok,
+az utolsó mind a 16). `-1` = a szülő csoportja eltolás nélkül, `0x10` = a lövedék (ha van), `-2` = a harcos talppontja (`0x4a8690`).
+Gyereksprite-fajták: 0 = rögzítve ott, ahol a csont most van (`0x447f4a`); 1 = követi a csontot (`0x4163d0`); 2–4 = a csontot
+követi eltolással, és a csonthoz képest elfordul (`0x43c2f0`: a kamera→csont mátrix Euler-szögének első tagja, 2-nél
+`0x7ff8 - szög`, rend 2 / 5 / 4).
+**Kibocsátó** (17 dword, `0x43bbfa`, részecske `0x43ba41`, frissítés `0x43bec1`): `[0]` a részecske szkriptje, `[1]` helyszórás,
+`[2]` sebességmód (0 = az ellenfél `[3]` csontja felé `[4..6]` eltolással, `[7]` sebességgel; 1 = ugyanez a saját csontra;
+2 = `[3..5]` állandó; 3 = `[3..5]` a csont mátrixával, az eredetiben eltolással együtt; 4 = mint a 2, de a talajon, z = 0),
+`[8]` sebességszórás, `[9,10]` gravitáció (z, szórással), `[11,12]` pattanás (0 = a talajon megszűnik), `[13,14]` élettartam
+(16.16 tick, `-1.0` = végtelen), `[15,16]` nem használt. Szórás: `v + ((rand() - 0x3fff) * 16) % s`. Lépésenként
+`pos += v·dt` és `v += g·dt` (a `dt/2`-es tag egész osztás, egész tickre 0).
+**Rajzolás** (`0x4480c7`, `BrSprite` modell `0x4483aa`): egységnégyzet, UV 0..0,97, a képkocka mátrixa × forgatás a
+kamerasíkban (billboard), a pozíció `[7]`-tel a kamera felé húzva. Z-pufferelt, a 0-s texel átlátszó, világítás nincs.
+Legfeljebb 256 sprite (`0x44e890`).
+
+**Könyvtárak** (`0x433350`, tábla `0x4a6b10`): generic és teleport mindig, `Arena%02d` (csak a 2-es és 6-os, vízi aréna
+létezik), a két harcosé (`1 << harcos`, Magnon = 1 … Kwondo = 11). Játékosonként `[id]` tábla (`0x4bd9a8`): egy későbbi
+könyvtár akkor írja felül az azonosítót, ha üres, vagy a könyvtár az adott játékos harcosáé vagy az arénáé – így a harcos
+saját vére lép a generic helyébe.
+**Indítók** (`0x44c666` sorba teszi, képkockánként legfeljebb 4-et; `0x44c851` / `0x44cba0` futtatja, dt = 0-val):
+- találat (`0x448cbb`): a talált testrészen (`c6f00`) vér `0x17 + irány` (Blood 1–4), ha a reakció sebződés, különben
+  blokkszikra `0x13 + irány` (Block 1–4); az irány a támadó eseményének `cond >> 6` bitjei;
+- mozdulat-esemény `0xe1`: azonosító = a rekord `tgt`-je, csontcsoport = `cond & 0x3f` (Kwondo töltés, torkolattűz;
+  Cyben fúvókák, rotor; a vízi arénák Step / Land / Splash effektjei);
+- a meccs eleje (`0x44cd7c` → `0x44cdd5`): teleport (`0x2d`) mindkét harcos talppontján; endurance-ben csak az újonnan
+  érkezőnél;
+  a teleportáló harcos addig láthatatlan (`0x444ea6`: a testrész-actorok típusa 0, `0x4a8828 = 1`), amíg a kör kezdete
+  (`0x4c7270`, `0x4464c2`) óta `0x1fd999` PIT-tick (kb. 1,75 mp valós idő, 48 Hz-en 84 tick) el nem telik (`0x444f54`) –
+  ekkor a legszélesebb a fénycsóva;
+- lövedékek (`0x43cdb2`, `Sfxproj.c`: saját találatvizsgálat a `0x4491f7`-tel) a 0xd3-as eseményből és a 0xf0–0xf7 mozdulat-
+  hangokból indulnának, de **a Turbo egyik mozdulattáblája sem használja őket** – halott kód, a port nem valósítja meg.
+Rygil (9) mozdulatainak 43-as azonosítója egyik könyvtárban sincs meg, az eredetiben sem rajzol semmit.
+`FX_SPRTRACE=1` kiírja a kért effekteket.
 
 Hanglejátszás (`Windsoun.c`): nincs térhatás. A `0x435eb4(bank, index)` pozíciót nem kap, SetPan csak 0, SetFrequency
 nincs, ismétlés nincs. 8 körbeforgó puffer (22 500 Hz-en, kb. 2 %-kal magasabban), a hosszú hangoknak egy külön

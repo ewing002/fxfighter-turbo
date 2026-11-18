@@ -153,6 +153,11 @@ typedef struct {
     struct { uint8_t bank, index; } snd[32];
     /* pending hits produced during event processing */
     int    hit_pending[2], hit_damage[2], hit_zone[2], hit_dir[2];
+    int    hit_part[2];    /* c6f00: the victim's body part the hit landed on (bone group of the effect) */
+    /* sprite effect requests for the front end (0x44c666, at most 4 per frame): player, bone group
+     * (row of 0x4aa510, -2 = the fighter's floor position), effect id of the .slb libraries */
+    int    nfx;
+    struct { int8_t player, group; uint8_t id; } fx[4];
 } Fight;
 
 void fight_init_player(Player *pl, const MoveSet *ms, const AniSet *own, const AniSet *generic,
@@ -171,6 +176,8 @@ void fight_place(const Fight *f, int i, float *wx, float *wy, float *wz, float *
 void fight_to_world(const Fight *f, int i, const float q[3], float out[3]);
 /* world position of a body part joint (hit cube centre) */
 void fight_joint(const Fight *f, int i, int part, float out[3]);
+/* world matrix of a body part (rows: axes, row 3: joint position), as 0x44c605 / 0x464180 */
+void fight_bone(const Fight *f, int i, int part, float m[4][3]);
 void fight_line_dir(const Fight *f, float *ux, float *uy);
 
 #endif
