@@ -42,6 +42,8 @@ Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgá
 **Beállítások:** a menetidő, a menetek száma, a nehézség, a játéksebesség (48 / 60 / 66,7 képkocka/s, a menetóra valós időben jár), a hendikep, a hangerők és a gombok a 3D menü OPTIONS részében állíthatók.
 A többi csak az `options.cfg`-ben: `fullscreen` (0/1, F11-gyel vagy Alt+Enterrel is), `vsync`, `ringouts` (ringből kiesés), `rumble` (rezgés),
 `round_time=99` (az eredetiben nincs ilyen menetidő).
+`ring_guard` (alapból 1): az emberi játékos a saját mozgásával (lépés, támadás, ugrás) nem léphet ki a gyűrűből, csak ütés, lökés vagy dobás
+viheti ki; 2 játékos módban az ellenfél teste sem tolhatja ki. 0 = az eredeti viselkedés, ahol a peremen túl is el lehet lépni.
 A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A rekordtábla ugyanitt van (`hiscores.dat`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
 
 **Harc** (alapkiosztás)

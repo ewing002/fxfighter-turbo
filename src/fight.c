@@ -923,6 +923,26 @@ static void ring_edge(Fight *f, int i)
     int push_fwd = behind - margin < 0, push_back = margin + ahead > 0;
     if (push_fwd) p->s += margin - behind;
     if (push_back) p->s -= margin + ahead;
+    /* port option (ring_guard): a human's own moves (not a hit reaction or a throw) keep the pelvis
+     * and both feet on the ring, so he cannot step out by himself; hits still can throw him out */
+    if (f->ring_guard && f->ringouts && !p->cpu && !p->in_react) {
+        static const int J[3] = { 7, 1, 9 };
+        static const float LIM[3] = { 0.15f, 0.02f, 0.02f };   /* inside the edge: pelvis, feet */
+        for (int it = 0; it < 3; it++) {
+            float best = 0;
+            for (int k = 0; k < 3; k++) {
+                float lim = f->ring_half - LIM[k], sh = 0;
+                fight_joint(f, i, J[k], c);
+                if (c[0] > lim && fabsf(ux) > 0.05f) sh = (lim - c[0]) / ux;
+                else if (c[0] < -lim && fabsf(ux) > 0.05f) sh = (-lim - c[0]) / ux;
+                if (c[1] > lim && fabsf(uy) > 0.05f) { float t2 = (lim - c[1]) / uy; if (fabsf(t2) > fabsf(sh)) sh = t2; }
+                else if (c[1] < -lim && fabsf(uy) > 0.05f) { float t2 = (-lim - c[1]) / uy; if (fabsf(t2) > fabsf(sh)) sh = t2; }
+                if (fabsf(sh) > fabsf(best)) best = sh;
+            }
+            if (best == 0) break;
+            p->s += best;
+        }
+    }
     if (p->mode >= 1 && p->mode <= 3) {           /* own decision: a jump does not carry out of the ring */
         float lim = f->ring_half - 0.3f;
         for (int it = 0; it < 2; it++) {

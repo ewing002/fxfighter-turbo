@@ -35,6 +35,7 @@ int main(int argc, char **argv)
     d = getf("fight/fighters/fi%d.cmp", arena, &sz); fighter_info_load(&afi, d, sz);
     fight_set_arena(&f, &afi);
     f.ringouts = 1;
+    f.ring_guard = getenv("RING_GUARD") != NULL;               /* port option: no stepping out */
     f.ai_level = getenv("AI") ? atoi(getenv("AI")) : 4;      /* CPU difficulty 0..7 */
     fight_reset(&f);
     int last[2] = { -1, -1 }, hp[2] = { MAX_HEALTH, MAX_HEALTH }, changes = 0, hits = 0, rounds = 0, ringouts = 0, kos = 0;
