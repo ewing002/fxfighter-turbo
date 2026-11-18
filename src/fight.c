@@ -870,7 +870,9 @@ static void ground(Fight *f, int i)
     p->vz = 0;
     float low = lowest_joint(f, i);
     if (low < 0) p->z -= low;
+    else if (p->z > 0 && p->land_snap) p->z -= fminf(p->z, low);   /* after a jump: straight onto the floor */
     else if (p->z > 0) p->z -= fminf(fminf(p->z, low), 0.07f);
+    if (p->land_snap) p->land_snap--;
 }
 
 static void move_modes(Fight *f, int i)
@@ -888,6 +890,9 @@ static void move_modes(Fight *f, int i)
         if (p->jt > 0.3f && (p->z <= 0.3f || low < 0)) {   /* landed */
             if (p->z < 0) p->z = 0;
             p->mode = 0; p->vel = 0;
+            /* the landing code (0x43f36e region, cb4e0 = -1 -> 0) puts the lowest foot on the floor in one
+             * step; the next move (JUMP LAND 3) has its own pelvis height, so a slow settle would pop it up */
+            p->land_snap = 4;
         }
     } else if (p->mode >= 4) {
         p->s += toward * p->vel * TICK_T;
@@ -1088,7 +1093,7 @@ void fight_reset(Fight *f)
         p->aset = NULL;
         p->cur = p->ms;
         p->owner = i;
-        p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0;
+        p->z = 0; p->mode = 0; p->vel = 0; p->jt = 0; p->land_snap = 0;
         p->radius = 0.3f;
         p->ringout = 0; p->vz = 0; p->floor_h = 0; p->have_prev_box = 0;
         p->stun = 0; p->combo = 0; p->mash = 0; p->in_react = 0; p->pend = 0; p->pend_t = 0;

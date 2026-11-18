@@ -22,6 +22,14 @@ int main(int argc, char **argv)
     const uint8_t *d = pac_get(&pac, "fight/fighters/f0.ani", &sz); ani_load(d, sz, &gen);
     static Fight f;
     for (int i = 0; i < 2; i++) {
+        /* fighter 13 (f13.ani, fm13.dat, moves) has no fi13.cmp / f13.cmp: not selectable in the game either */
+        static const char *need[] = { "fight/fighters/f%d.ani", "fight/fighters/fi%d.cmp", "fight/moves/f%d.hdr", "fight/moves/f%d.ste" };
+        for (int k = 0; k < 4; k++)
+            if (!getf(need[k], id[i], &sz)) {
+                char n[64]; snprintf(n, sizeof n, need[k], id[i]);
+                fprintf(stderr, "fighter %d is incomplete: %s missing\n", id[i], n);
+                return 1;
+            }
         d = getf("fight/fighters/f%d.ani", id[i], &sz); ani_load(d, sz, &own[i]);
         d = getf("fight/moves/f%d.hdr", id[i], &sz); const uint8_t *e = getf("fight/moves/f%d.ste", id[i], &s2);
         moveset_load(&ms[i], d, sz, e, s2);

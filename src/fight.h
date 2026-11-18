@@ -108,6 +108,7 @@ typedef struct {
     float  jt, z;          /* jump time / height offset */
     float  radius;         /* cb530: smoothed body radius */
     int    solid;          /* a8260 */
+    int    land_snap;      /* ticks after a jump landed: ground() puts the feet on the floor at once */
     int    ringout;        /* fell out of the ring */
     float  vz;             /* vertical speed while falling out of the ring */
     int    have_prev_box;  /* a8268: a hit check of this move already ran (swept test) */

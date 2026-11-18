@@ -73,7 +73,7 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 - AI: nem gombot nyom, hanem átmenetet választ a mozdulatfejléc 0x19–0x20-as bájtjai alapján. Részletek: `docs/FORMATS.md`.
 
 ## Nyitott feladatok (prioritás szerint)
-1. **AI apróságok:** az eredeti AI kész. A `0x424d8f` pontos eltolása hiányzik. A 13-as harcos a szimulátorban összeomlik.
+1. **AI:** az eredeti AI kész, a `0x424d8f` ringszél-vizsgálattal együtt. A 13-as harcos befejezetlen adat (nincs `fi13.cmp` és `f13.cmp`, a játékban sem választható); a szimulátor ilyenkor hibaüzenettel kilép.
 2. **Jerzan (12. harcos):** az eredetiben félbehagyott tartalom: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pontnyira zsugorítottak (csak a fej, a kezek és a lábfejek látszanak), az animációja Magnoné (`f12.ani` = `f1.ani`), a mozdulatkészlete saját. A port rejtett harcosként játszhatóvá teszi (bővítés): a pontnyi testrészek Magnon geometriáját kapják Jerzan anyagával (`jerzan_body`), a választóban Magnonon rúgást nyomva tartva ütéssel választható (1P létra, 2P), a létrája Magnoné, a rekordtáblába Magnonként kerül. Teszt: a `match: p1 .. p2 ..` sor (`FX_AUTOTEST`).
 3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Látványeffekt nincs: a `0x4f1a48` (`= 0x17f`, `0x449148`) változót az eredeti csak írja, sehol nem olvassa; a kábulás látható része a DAZE mozdulat (`0x401785(i, 0x68)`), ez a portban is megvan.
 4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
@@ -83,9 +83,11 @@ Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` aljá
 8. **Háttér és padló:** a háttér helyzete, a padló-részletesség három beállítása és a padló-animáció (`0x428f0a`, 0xa és 0xb aréna) az eredeti szerint kész.
 9. **Sprite-effektek (`.slb`):** kész (`src/sprfx.c`): blokk-szikra és vér a találatnál, a `0xe1` mozdulat-esemény effektjei (töltés, torkolattűz, fúvókák, vízi fröccsenés), teleport a meccs elején (a harcosok és árnyékuk 1,75 mp-ig, a csóva legszélesebb pontjáig láthatatlanok, `0x444ea6` / `0x444f54`). A harcmotor a kéréseket a `Fight.fx` sorba teszi (képkockánként 4), a `main.c` minden tick után indítja és lépteti őket. `FX_SPRTRACE=1` kiírja a kéréseket. A lövedékek (`Sfxproj.c`) halott kód: egyik mozdulattábla sem indítja őket. Nyitott: a 2–4-es fajtájú sprite-ok elforgatása (Euler-szög) csak az eredeti képletéből van, élő összevetés nélkül.
 
-## Nyitott kérdések (a felhasználótól)
-- Az ugrás közben tiltott ringből való kiesés saját döntés, nem az eredetiből származik.
-- Egy elrugaszkodás élőben kicsit rántást okozhat (szimulációban látszott).
+## Eldöntött kérdések (a felhasználóval)
+- Hálózati játék nem lesz a portban (szándékosan kimarad).
+- Az ugrás közben tiltott ringből való kiesés saját döntés, nem az eredetiből származik; így marad.
+- Az ugrás végén a földet érés után a harcos egy lépésben kerül a padlóra (`land_snap`, mint az eredeti `cb4e0` igazítása),
+  így a JUMP LAND 3 eleji medence-ugrás megszűnt; a maradék kis eltérés az animációk pózkülönbsége.
 
 ## Munkamód
 - Kis lépésekben haladunk. Minden változtatás után buildelünk, screenshotot vagy szimulációs logot nézünk, és frissítjük a dokumentációt.

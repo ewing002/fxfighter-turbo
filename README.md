@@ -42,7 +42,7 @@ Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a máso
 ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
 TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
 Az eredeti sprite-effektjei (`fight/sfx/*.slb`) is látszanak: blokk-szikra, vér, a különleges mozdulatok lángjai és szikrái,
-vízi arénában a fröccsenés, a meccs elején a teleport. Még hiányzik: nincs hálózati játék.
+vízi arénában a fröccsenés, a meccs elején a teleport. A hálózati játék szándékosan kimaradt.
 Harc közben F1–F4 a két harcos textúráját és árnyalását kapcsolja, F5 a padlótextúrát (ki / be / perspektivikus), F6 a hátteret.
 A padló részletessége (`detail6` az `options.cfg`-ben, 0–2) az aréna betöltésekor hat; 0-nál, mint az eredetiben,
 nincs padlómodell, és ringből kiesés sincs.

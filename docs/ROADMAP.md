@@ -45,7 +45,7 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
    A lövedékek (`Sfxproj.c`) halott kód: a Turbo mozdulattáblái nem indítják őket)
 6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
    a `0x424d8f` ringszél-vizsgálat is az eredeti szerint (a követett medencétől 2 egységre: balra, jobbra vagy hátra)
-7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, online/LAN a DirectPlay helyett, FMV-lejátszó (✅ `src/video.c`).
+7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, FMV-lejátszó (✅ `src/video.c`).
 
 ## Ismert hibák
 - ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).

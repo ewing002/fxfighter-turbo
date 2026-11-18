@@ -80,7 +80,7 @@ const uint8_t *pac_get(const Pac *pac, const char *name, size_t *size)
  *                          c >= 0x80 -> copy 256-c literal bytes. */
 uint8_t *cmp_decode(const uint8_t *src, size_t n, size_t *out_size)
 {
-    if (n < 4) return NULL;
+    if (!src || n < 4) return NULL;
     uint32_t total = rd32le(src);
     if (total > 16u * 1024 * 1024) return NULL;
     uint8_t *out = calloc(1, total ? total : 1);
