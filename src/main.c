@@ -80,7 +80,7 @@ static float g_bg_turn = 90, g_cm_pitch_bg = 88;
 #define CAM_ASPECT 1.46f
 
 /* ---- front end / match state ---- */
-enum { ST_FIGHT, ST_FE3D, ST_VIDEO };
+enum { ST_FIGHT, ST_FE3D, ST_VIDEO, ST_CREDITS };
 static int  g_state = ST_FE3D, g_state_t;      /* 3D menus or a fight; ticks spent in it */
 static int  g_two_players;                      /* match type: 0 = 1 player vs CPU ladder, 1 = 2 players */
 static int  g_debug_fight;                      /* started from the command line: endless rounds */
@@ -94,6 +94,7 @@ static int  g_lad_resume, g_lad_old;            /* 1P continue: keep the ladder 
 static void cont_draw(int w, int h);
 static void play_videos(const char *const *names, int n, void (*done)(void));
 static void video_draw(int w, int h);
+static void credits_draw(int w, int h);
 static double g_ladder_time;                    /* 1P ladder: fight time so far in seconds (0x4c7320, real time) */
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
@@ -611,6 +612,7 @@ static void render(int w, int h)
 {
     if (g_state == ST_FE3D) { fe_vm_scene_lerp(&g_vm, &g_fesc, g_fe_alpha); fe_gl_render(&g_fe, &g_fesc, w, h); return; }
     if (g_state == ST_VIDEO) { video_draw(w, h); return; }
+    if (g_state == ST_CREDITS) { credits_draw(w, h); return; }
     glViewport(0, 0, w, h);
     glClearColor(0.02f, 0.02f, 0.06f, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1269,6 +1271,7 @@ static double g_vid_t, g_vid_end;
 static uint32_t g_vid_ts;
 static int  g_vid_pending, g_vid_eof, g_vid_tw, g_vid_th;
 static GLuint g_vid_tex;
+static int  g_vid_keep_music, g_vid_esc;      /* credits: the CD music goes on; Esc ends the credits */
 static char g_vid_dirs[5][1100];
 
 static void video_dirs_init(void)
@@ -1328,7 +1331,8 @@ static void video_start_next(void)
 static void play_videos(const char *const *names, int n, void (*done)(void))
 {
     if ((getenv("FX_AUTOTEST") && !getenv("FX_VIDEOTEST")) || getenv("FX_NOVIDEO")) { if (done) done(); return; }   /* tests: none */
-    music_stop();
+    if (!g_vid_keep_music) music_stop();
+    g_vid_esc = 0;
     g_vq_n = n > 8 ? 8 : n; g_vq_i = 0; g_vq_done = done;
     for (int i = 0; i < g_vq_n; i++) g_vq[i] = names[i];
     video_start_next();
@@ -1360,7 +1364,7 @@ static void video_update(double dt)
 
 static void video_key(SDL_Keycode k)
 {
-    if (k == SDLK_ESCAPE) g_vq_i = g_vq_n;          /* skip the whole sequence */
+    if (k == SDLK_ESCAPE) { g_vq_i = g_vq_n; g_vid_esc = 1; }   /* skip the whole sequence */
     video_finish();
     video_start_next();
 }
@@ -1378,8 +1382,251 @@ static void video_draw(int w, int h)
     ui_end();
 }
 
+/* ---- end credits (Credits.c, 0x429800; docs/FRONTEND.md) ----
+ * credits.txt, line by line (empty lines skipped): '#' comment; prefix keywords List / Fmv / Sound
+ * set the mode; mode 1 "name;title;x;y" = the team screen, mode 2 = one scrolled line ('>' = heading
+ * in the big orange font), mode 3 = a clip from fight/video, mode 4 = a spoken name (credits.fxl).
+ * Drawn into a 640x480 8-bit canvas (demo.pal) with fight/frontend/text.pix, glyph tables 0x4a5994. */
+static struct {
+    int on, mode, phase, abort, st, lim, hd, x, have_font, steps;
+    char *txt; size_t len, pos;
+    double t;
+    uint8_t canvas[640 * 480], shown[640 * 480];
+    float bright;
+    char line[256];
+    Pixmap font;
+    GLuint tex;
+    int dirty;
+} g_cr;
+enum { CR_PARSE, CR_TEAM, CR_SCROLL, CR_CLIP };
+
+static void cr_glyph(int x0, int y0, int sx, int sy, int w, int h)
+{
+    const Pixmap *f = &g_cr.font;
+    for (int y = 0; y < h; y++) {
+        int Y = y0 + y, SY = sy + y;
+        if (Y < 0 || Y >= 480 || SY < 0 || SY >= f->height) continue;
+        for (int x = 0; x < w; x++) {
+            int X = x0 + x, SX = sx + x;
+            if (X >= 0 && X < 640 && SX >= 0 && SX < f->width) g_cr.canvas[Y * 640 + X] = f->pixels[SY * f->row_bytes + SX];
+        }
+    }
+}
+
+/* the glyph table pair (x, w) of character c, style 1 (big) or 0 (small), as the EXE indexes it */
+static void cr_tab(int c, int big, int *x, int *w)
+{
+    const uint8_t *e = exe_ptr(&g_fe.exe, 0x4a5994u + (uint32_t)c * 4 + (big ? 0 : 0x68), 4);
+    *x = e ? e[0] | e[1] << 8 : 0; *w = e ? e[2] | e[3] << 8 : 16;
+}
+
+static int cr_up(int c) { return c > 0x60 && c < 0x7b ? c - 0x20 : c; }
+
+/* the pen advance of character c (already upper-cased). The original 0x42a312 advances big digits and
+   punctuation by garbage table entries and 0x42a20e measures with other widths than it advances, so lines
+   came out off-centre and ">S 3   Code" was pushed off the screen; the port uses one advance for both. */
+static int cr_adv(int c, int big)
+{
+    int gx, gw;
+    if (c > 0x40 && c < 0x5b) {
+        if (!big) return c == 'I' ? 7 : 16;
+        if (c == 'I') return 16;
+        cr_tab(c, 1, &gx, &gw); return gw;
+    }
+    if (c > 0x2f && c < 0x3a) return big ? 24 : 16;
+    return big ? 12 : 8;                               /* space, and punctuation (no glyph) */
+}
+
+static int cr_width(const char *str, int big)
+{
+    int w = 0;
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++) w += cr_adv(cr_up(*p), big);
+    return w;
+}
+
+static void cr_text(int x, int y, const char *str, int big)  /* 0x42a312, opaque, origin = centre */
+{
+    int pen = 0, gx, gw;
+    for (const unsigned char *p = (const unsigned char *)str; *p; p++) {
+        int c = cr_up(*p), dx = 320 + x + pen, dy = 240 + y;
+        if (c > 0x40 && c < 0x5b) {
+            cr_tab(c, big, &gx, &gw);
+            if (!big) { if (c == 'I') cr_glyph(dx, dy, gx + 3, 0, 8, 16); else cr_glyph(dx, dy, gx, 0, 16, 16); }
+            else { if (c == 'I') cr_glyph(dx, dy, gx + 3, 19, 18, 18); else cr_glyph(dx, dy, gx, 19, gw, 18); }
+        }
+        if (c > 0x2f && c < 0x3a) {
+            if (!big) cr_glyph(dx, dy, (c - '0') * 16, 56, 16, 16); else cr_glyph(dx, dy, (c - '0') * 24, 36, 24, 18);
+        }
+        pen += cr_adv(c, big);
+    }
+}
+
+static void cr_show(void) { memcpy(g_cr.shown, g_cr.canvas, sizeof g_cr.shown); g_cr.dirty = 1; }
+
+static void credits_end(void)
+{
+    g_cr.on = 0;
+    free(g_cr.txt); g_cr.txt = NULL;
+    if (g_cr.have_font) { pix_free(&g_cr.font); g_cr.have_font = 0; }
+    music_stop();                                     /* 0x43b077(-2): the CD music fades out */
+    if (getenv("FX_AUTOTEST")) { printf("credits: end"); puts(""); fflush(stdout); }
+    fe_enter_entry(2);                                /* then the high score name entry */
+}
+
+static void cr_clip_done(void)
+{
+    g_vid_keep_music = 0;
+    if (g_vid_esc) { credits_end(); return; }        /* Esc in a clip ends the credits (0x4a5cf4) */
+    g_cr.phase = CR_PARSE;
+    g_state = ST_CREDITS;
+}
+
+static void credits_start(void)
+{
+    if ((getenv("FX_AUTOTEST") && !getenv("FX_VIDEOTEST")) || getenv("FX_NOVIDEO")) { fe_enter_entry(2); return; }
+    size_t sz;
+    const uint8_t *d = pac_get(&g_pac, "fight/credits.txt", &sz);
+    size_t fsz = 0;
+    const uint8_t *f = pac_get(&g_pac, "fight/frontend/text.pix", &fsz);
+    if (!d || !f || !g_fe_ok) { fe_enter_entry(2); return; }
+    memset(&g_cr, 0, sizeof g_cr);
+    g_cr.txt = malloc(sz + 1);
+    if (!g_cr.txt) { fe_enter_entry(2); return; }
+    memcpy(g_cr.txt, d, sz); g_cr.txt[sz] = 0; g_cr.len = sz;
+    g_cr.have_font = pix_load_all(f, fsz, &g_cr.font, 1) == 1 && g_cr.font.pixels;
+    if (!g_cr.have_font) { free(g_cr.txt); fe_enter_entry(2); return; }
+    g_cr.on = 1; g_cr.mode = 1; g_cr.phase = CR_PARSE; g_cr.bright = 1;
+    sfx_bank_load(0, "credits");                      /* bank 0 = the spoken names */
+    g_bank0_front = 0;
+    music_play(2);                                    /* CD track 2 */
+    cr_show();
+    g_state = ST_CREDITS; g_state_t = 0;
+    if (getenv("FX_AUTOTEST")) { printf("credits: start"); puts(""); fflush(stdout); }
+}
+
+/* the next non-empty line (strtok on "\n\r"), NULL at the end */
+static const char *cr_next_line(void)
+{
+    while (g_cr.pos < g_cr.len) {
+        size_t a = g_cr.pos, b = a;
+        while (b < g_cr.len && g_cr.txt[b] != '\n' && g_cr.txt[b] != '\r') b++;
+        g_cr.pos = b + 1;
+        if (b == a) continue;
+        size_t n = b - a < sizeof g_cr.line - 1 ? b - a : sizeof g_cr.line - 1;
+        memcpy(g_cr.line, g_cr.txt + a, n); g_cr.line[n] = 0;
+        return g_cr.line;
+    }
+    return NULL;
+}
+
+static void credits_update(double dt)
+{
+    if (!g_cr.on) return;
+    g_cr.t += dt;
+    if (g_cr.phase == CR_TEAM) {                     /* 0x429fb5: fade in 1.28 s, hold 1.5 s, down to 72 % */
+        double t = g_cr.t;
+        if (t < 1.28) g_cr.bright = (float)(t / 1.28 * 252.0 / 256.0);
+        else if (t < 2.78) g_cr.bright = 1.f;
+        else if (t < 3.16) g_cr.bright = (float)(1.0 - (t - 2.78) / 0.38 * (72.0 / 255.0));
+        else {                                        /* cut to black */
+            memset(g_cr.canvas, 0, sizeof g_cr.canvas); cr_show(); g_cr.bright = 1;
+            g_cr.phase = CR_PARSE;
+        }
+        g_cr.dirty = 1;
+        if (g_cr.phase == CR_TEAM) return;
+    }
+    if (g_cr.phase == CR_SCROLL) {                    /* 3 px per 60 ms step (0x429c71) */
+        while (g_cr.phase == CR_SCROLL && g_cr.t >= 0.06) {
+            g_cr.t -= 0.06;
+            cr_text(g_cr.x, 240 - g_cr.st, g_cr.line, g_cr.hd);   /* screen row 480 - t */
+            cr_show();
+            memmove(g_cr.canvas, g_cr.canvas + 3 * 640, 640 * 477);
+            memset(g_cr.canvas + 640 * 477, 0, 640 * 3);
+            g_cr.st += 3; g_cr.steps++;
+            if (g_cr.st > g_cr.lim) g_cr.phase = CR_PARSE;
+        }
+        if (g_cr.phase == CR_SCROLL) return;
+        if (g_cr.abort) { credits_end(); return; }    /* Esc / Space, checked between lines */
+    }
+    if (g_cr.phase != CR_PARSE) return;
+    for (;;) {
+        const char *l = cr_next_line();
+        if (!l) { credits_end(); return; }
+        if (l[0] == '#') continue;
+        if (!SDL_strncasecmp(l, "List", 4)) { g_cr.mode = 2; continue; }
+        if (!SDL_strncasecmp(l, "Fmv", 3)) { g_cr.mode = 3; continue; }
+        if (!SDL_strncasecmp(l, "Sound", 5)) { g_cr.mode = 4; continue; }
+        if (g_cr.mode == 1) {                         /* name;title;x;y */
+            char tmp[256]; snprintf(tmp, sizeof tmp, "%s", l);
+            char *name = strtok(tmp, ";"), *title = strtok(NULL, ";"), *xs = strtok(NULL, ";"), *ys = strtok(NULL, ";");
+            if (!name || !title || !xs || !ys) continue;      /* "Scroll,Dn", "Code:": nothing */
+            memset(g_cr.canvas, 0, sizeof g_cr.canvas);
+            int x = atoi(xs), y = atoi(ys);
+            cr_text(x, y - 50, name, 0);
+            cr_text(x, y, title, 1);
+            cr_show(); g_cr.bright = 0;
+            g_cr.phase = CR_TEAM; g_cr.t = 0;
+            return;
+        }
+        if (g_cr.mode == 2) {                         /* one scrolled line */
+            g_cr.hd = l[0] == '>';
+            if (g_cr.hd) g_cr.line[0] = ' ';
+            /* centre the visible text: the heading's leading blank (12 px) stays left of the centre */
+            g_cr.x = g_cr.hd ? -(cr_width(g_cr.line + 1, 1) / 2) - 12 : -(cr_width(g_cr.line, 0) / 2);
+            g_cr.lim = g_cr.hd ? 18 : 16; g_cr.st = 0;
+            g_cr.phase = CR_SCROLL; g_cr.t = 0.06;    /* the first step at once */
+            credits_update(0);
+            return;
+        }
+        if (g_cr.mode == 3) {                         /* a clip: fight/video/<name>.brp, silent */
+            g_cr.mode = 1;
+            static char clip[64];
+            snprintf(clip, sizeof clip, "%.60s", l);
+            for (char *q = clip + strlen(clip); q > clip && q[-1] == ' '; ) *--q = 0;
+            static const char *one[1]; one[0] = clip;
+            g_cr.phase = CR_CLIP;
+            g_vid_keep_music = 1;
+            play_videos(one, 1, cr_clip_done);
+            return;
+        }
+        if (g_cr.mode == 4) { g_cr.mode = 1; sfx_play(0, atoi(l)); }   /* the spoken name */
+        if (g_cr.abort) { credits_end(); return; }
+    }
+}
+
+static void credits_draw(int w, int h)
+{
+    glViewport(0, 0, w, h);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (!g_cr.tex) {
+        glGenTextures(1, &g_cr.tex);
+        glBindTexture(GL_TEXTURE_2D, g_cr.tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1024, 512, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+        g_cr.dirty = 1;
+    }
+    if (g_cr.dirty) {
+        static uint8_t rgb[640 * 480 * 3];
+        int k = (int)(g_cr.bright * 256.f);
+        for (int i = 0; i < 640 * 480; i++) {
+            const Rgb *c = &g_fe.pal[g_cr.shown[i]];
+            rgb[3 * i] = (uint8_t)(c->r * k >> 8); rgb[3 * i + 1] = (uint8_t)(c->g * k >> 8); rgb[3 * i + 2] = (uint8_t)(c->b * k >> 8);
+        }
+        glBindTexture(GL_TEXTURE_2D, g_cr.tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 640, 480, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+        g_cr.dirty = 0;
+    }
+    ui_begin(w, h);
+    Sprite sp = { g_cr.tex, 640, 480, 640.f / 1024.f, 480.f / 512.f, 1 };
+    ui_draw(&sp, 0, 0, 1.f, 1.f);
+    ui_end();
+}
+
 /* after the last ladder fight: the win video, then the name entry (status 11 -> entry 2) */
-static void after_win_video(void) { fe_enter_entry(2); }
+static void after_win_video(void) { credits_start(); }   /* 0x413f5f: the credits, then the name entry */
 static void after_lose_video(void) { fe_enter(); }
 
 /* ---- continue screen (continue.c, 0x4368c0, docs/FRONTEND.md) ----
@@ -2198,6 +2445,7 @@ int main(int argc, char **argv)
                 Fighter *a = &g_f[0], *b = &g_f[1];
                 SDL_Keycode k = e.key.keysym.sym;
                 if (g_state == ST_VIDEO) { if (k != SDLK_F11) { video_key(k); continue; } }
+                if (g_state == ST_CREDITS) { if (k == SDLK_ESCAPE || k == SDLK_SPACE) g_cr.abort = 1; continue; }
                 if (g_state == ST_FIGHT && g_fe_mode == 0) { fe_enter(); continue; }   /* any key ends the demo */
                 if (g_state == ST_FIGHT && g_tour && g_fight.p[0].cpu && g_fight.p[1].cpu && k != SDLK_ESCAPE &&
                     !getenv("FX_AUTOTEST")) {           /* 0x445874: a CPU match is skipped, random winner */
@@ -2283,6 +2531,7 @@ int main(int argc, char **argv)
         if (getenv("FX_SPEED")) dt *= atof(getenv("FX_SPEED"));   /* testing: fast forward */
         acc += dt;
         if (g_state == ST_VIDEO) { video_update(dt); acc = 0; }
+        else if (g_state == ST_CREDITS) { credits_update(dt); acc = 0; }
         else if (g_state == ST_FE3D) {
             while (acc >= FE_TICK && g_state == ST_FE3D) { if (!fe_tick()) running = 0; acc -= FE_TICK; }
             if (g_state != ST_FE3D) acc = 0;

@@ -19,7 +19,7 @@ Windows 10/11-en, Linuxon és macOS-en is fordítható.
 - ✅ **Gépi ellenfél**: az eredeti AI visszafejtve, 8 nehézségi szinttel
 - ✅ **Rekordtábla**: a létra végén az eredeti névbeíró képernyő és táblázat, mentve a `hiscores.dat`-ba
 - ✅ **Videók (FMV)**: az eredeti intró és logók, a létra végi és a game over videó, a CD-ről (lásd lent)
-- ⏳ Stáblista: lásd `docs/ROADMAP.md`
+- ✅ **Stáblista**: a létra végén a WIN videó után a munkatársak klipjei a bemondott nevekkel, majd a görgetett névsor
 
 ## Futtatás Windows alatt
 Indítsd el a `port\bin-win64\fxfighter.exe`-t. A program magától megtalálja a két szinttel feljebb lévő `FIGHT.PAC`-ot.
@@ -78,7 +78,7 @@ Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (eze
 valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
 
 ## Videók
-Az eredeti videók (intró, logók, a létra végi és a game over jelenet) a CD-n vannak. A `tools/rip_video.py` kimásolja őket:
+Az eredeti videók (intró, logók, a létra végi és a game over jelenet, a stáblista klipjei) a CD-n vannak. A `tools/rip_video.py` kimásolja őket:
 ```
 python3 tools/rip_video.py "cd/FX Fighter Turbo.bin" port/video
 ```

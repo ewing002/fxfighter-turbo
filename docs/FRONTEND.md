@@ -139,8 +139,20 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
    - visszatérés a meccs után (`ProcessWrapperReturns`, `0x413d3d`, státusz → G58): bemutató vége (0), Esc (0), 1P game
      over (10 → 0), létra vége (11 → 2, névbeírás), endurance vége (5/6 → 7: WINNER / LOSER képernyő; G59/G60 a győztes
      és a vesztes harcosa, G61/G62 az oldaluk, `0x41970d`), torna (13 → 6), 2P meccs (22 → 4, a 2P választó). Nincs a
-     portban: a hálózat (23 → 5) és a stáblista (`credits.txt`, `0x429800`); a létra végi (WIN) és a game over (LOSE)
-     videó lefut (`docs/FORMATS.md`, videók);
+     portban: a hálózat (23 → 5). A létra végén a WIN videó, a stáblista és a névbeírás jön, game overnél a LOSE videó;
+   - stáblista (`Credits.c`, `0x429800`, `fight/credits.txt`): üres sorok kimaradnak; `#` megjegyzés; a `List` / `Fmv` /
+     `Sound` előtag (kis- és nagybetű mindegy) módot vált. 1. mód: `név;cím;x;y` = a csapatképernyő (kis zöld név a
+     (x, y−50), nagy narancs cím az (x, y) helyen a középponthoz képest; 1,28 s beúszás, 1,5 s állás, 72 %-ra halványul,
+     fekete); a `Scroll,Dn` és a `Code:` mezők híján semmit nem csinál. 4. mód: a `credits.fxl` n-edik bemondása, 3. mód:
+     a `fight/video/<név>.brp` klip (néma, a zene megy tovább), mindkettő után vissza az 1. módba. 2. mód: egy görgetett
+     sor egy 640×480-as palettás vásznon (demo.pal): a `text.pix` betűi (kis zöld 16×16, `>` = címsor a nagy narancs
+     betűkkel; betűtábla `0x4a5994`, szélesség `0x42a20e`), lépésenként 3 képpont / 60 ms, egy sor 6 lépés (címsor 7).
+     Zene: CD 2. sáv. Esc vagy Space a sorok között kilép, Esc egy klip alatt is; más gomb a klipet ugorja át. A port
+     `src/main.c` (`credits_*`) ezt követi, két javítással: az eredetiben a szélességmérés (`0x42a20e`) más értékekkel
+     számol, mint a rajzoló léptetése, a nagy számjegyek és az írásjelek léptetése pedig a tábla szemétértékeiből jön.
+     Emiatt a sorok jobbra csúsztak, és az `>S 3   Code` címsor kicsúszott a képből. A portban egy közös léptetés
+     (`cr_adv`) méri és rajzolja a sort: a nagy számjegy 24, az írásjel a szóközzel azonos széles. Így a sorok
+     középen vannak, és minden címsor látszik;
    - folytatás-képernyő (`continue.c`, `0x4368c0`; részletek: a jegyzetek `continue_notes.md`): elveszett 1P meccs után
      (`0x41aec7`) és minden 2P meccs után (`0x40413a`), a vesztes oldalra; endurance, torna, bemutató nem hívja. Két
      acélajtó (doorl/doorr.cmp, 160×240) zárul be (x += v, v += 1,2 képkockánként, 17 képkocka), aztán „PLAYER n
@@ -172,7 +184,7 @@ menet, hang, gombok átállítása, aréna, VS panel, betűrács, statisztika).
      indulásakor a VM elfelejti a korábbi lenyomásokat, különben a helyet kijelölő ütésgombot venné fel;
    Ellenőrizve gyorsított, szkriptelt futással (`FX_AUTOTEST=1 FX_SPEED=10 FX_FE_INPUT=…`): 1P-létra, 2P (hendikep- és
    LOADING-képernyővel), bemutató, kilépés, SAVE, gombátállítás és -mentés, állóképesség, torna (VS- és eredményképernyő
-   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása és a stáblista.
+   képernyőképen, `FX_FE_ENTRY`/`FX_FE_G`). Hátra van: a kihívó becsatlakozása.
 6. ✅ **A régi 2D-s menük kivezetése:** a címkép, a 2D főmenü, OPTIONS, karakter- és arénaválasztó és VS-képernyő, a
    `--menu2d` és a `--screen title|menu|…` kikerült (`src/main.c`), a `src/ui.c`-ben csak a harc sprite-jai maradtak.
    `FIGHT.EXE` nélkül a program hibaüzenettel kilép; a parancssori harc (`--p1/--p2/--arena`, `--fight`) menü
