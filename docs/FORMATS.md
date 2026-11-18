@@ -336,4 +336,6 @@ textúrás: .4/.3/.5, Gouraud-textúrás: .5/.2/.1, p = 20). Textúrás módban 
 esetén a TXBANK1–8 és BANK1–8 megvilágított és simított (a TXFBANK/FBANK mindig lapos); textúra nélkül minden anyag
 a bankja rámpája (10 + 16(n−1), 15 lépés). Padló (`0x41cdcd`): textúrával a TXF/TXGFLOOR nyers texel; nélküle
 TXGFLOOR .35/.30/.99 simított, TXFFLOOR .15/.45/.15 lapos, 10 lépéses rámpa. A port ezt CPU-n számolja (az
-OpenGL-világítás ki van kapcsolva); a megvilágított textúrát `min(sor/48, 1)` szürkével modulálja.
+OpenGL-világítás ki van kapcsolva); a megvilágított textúrát `min(sor/48, 1)` szürkével modulálja, majd
+`clamp((sor − 48)/12, 0, 1)` arányban a `paletta[137]` felé keveri (a tábla 49–59. sora ezt közelíti, a 60–63. sor
+már csupa 137).

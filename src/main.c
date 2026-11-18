@@ -392,8 +392,9 @@ static int g_floor_pass;
  *   l = ka + (d > 0 ? kd d + spec : 0),  d = s (n . L),  spec = h > 0.6172 ? h ks s / (p - p h + h) : 0,
  *   h = n . normalize(L + eye);  l is clamped to [0, 1).
  * Untextured faces: palette[base + 0.5 + range l]. Lit textured faces: colmap row 0.5 + 63 l (row 48 = the
- * raw texel, below it darker); the port modulates the texture by min(row / 48, 1), so the whitening of
- * rows above 48 (specular highlights) is lost. Unlit textured faces: raw texels. */
+ * raw texel, below it darker ~ row / 48, above it whitening toward palette colour 137, reached at row 60).
+ * The port draws them with two texture stages: texel * min(row / 48, 1) (primary RGB), then a blend toward
+ * palette[137] by clamp((row - 48) / 12, 0, 1) (primary alpha). Unlit textured faces: raw texels. */
 static float g_light_eye[3] = { 0, 0, 1 }, g_light_s = 1.111f;
 
 enum { SH_GL, SH_RAW, SH_TEXLIT, SH_RAMP, SH_FLAT };   /* SH_FLAT: one unlit palette colour */
@@ -463,12 +464,60 @@ static float shade_l(const Shade *sh, const float nm[9], const float n[3])
     return l;
 }
 
+/* colmap highlights: unit 0 = texel * primary RGB, unit 1 = mix(previous, palette[137], primary alpha).
+ * Needs glActiveTexture (GL 1.3, not exported by opengl32.dll); without it the highlights are left out. */
+typedef void (APIENTRY *ActiveTextureFn)(GLenum);
+static ActiveTextureFn g_active_tex;
+static int g_hl_ok = -1, g_hl_on;
+
+static void hl_set(int on, GLuint tex)
+{
+    if (g_hl_ok < 0) {
+        g_active_tex = (ActiveTextureFn)SDL_GL_GetProcAddress("glActiveTexture");
+        if (!g_active_tex) g_active_tex = (ActiveTextureFn)SDL_GL_GetProcAddress("glActiveTextureARB");
+        g_hl_ok = g_active_tex != NULL && getenv("FX_NOHIGHLIGHT") == NULL;
+    }
+    if (!g_hl_ok || on == g_hl_on) return;
+    g_hl_on = on;
+    if (on) {
+        Rgb w = g_cur_pal ? g_cur_pal[137] : (Rgb){ 255, 255, 255 };
+        GLfloat wc[4] = { w.r / 255.f, w.g / 255.f, w.b / 255.f, 1 };
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);       /* unit 0: alpha from the texture only */
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        g_active_tex(GL_TEXTURE1);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, tex);                                 /* any texture: only enables the stage */
+        glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, wc);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_INTERPOLATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_CONSTANT);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PREVIOUS);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE2_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND2_RGB, GL_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+        g_active_tex(GL_TEXTURE0);
+    } else {
+        g_active_tex(GL_TEXTURE1);
+        glDisable(GL_TEXTURE_2D);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        g_active_tex(GL_TEXTURE0);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    }
+}
+
 static void shade_color(const Shade *sh, float l)
 {
     if (sh->kind == SH_TEXLIT) {
-        float g = floorf(0.5f + 63.f * l) / 48.f;
+        float row = floorf(0.5f + 63.f * l), g = row / 48.f, t = (row - 48.f) / 12.f;
         if (g > 1) g = 1;
-        glColor3f(g, g, g);
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        glColor4f(g, g, g, g_hl_on ? t : 1.f);
     } else if (sh->kind == SH_RAMP && g_cur_pal) {
         Rgb c = g_cur_pal[(int)floorf((float)sh->base + 0.5f + (float)sh->range * l) & 255];
         glColor3ub(c.r, c.g, c.b);
@@ -508,6 +557,7 @@ static void draw_model(const Model *m, GLuint tex, int tile)
         if (sh.kind == SH_RAMP || sh.kind == SH_FLAT) textured = 0;
         int want_gl = sh.kind == SH_GL;
         if (want_gl != gl_on) { if (want_gl) glEnable(GL_LIGHTING); else glDisable(GL_LIGHTING); gl_on = want_gl; }
+        hl_set(textured && sh.kind == SH_TEXLIT, tex);
         if (textured) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, tex);
@@ -546,8 +596,10 @@ static void draw_model(const Model *m, GLuint tex, int tile)
         }
         glEnd();
     }
+    hl_set(0, tex);
     if (!gl_on) glEnable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
+    glColor4f(1, 1, 1, 1);
 }
 
 static void gl_mult_br(float m[4][3])

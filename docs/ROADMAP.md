@@ -50,8 +50,9 @@ A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
 ## Ismert hibák
 - ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).
 - A színezés az eredeti BRender-indexvilágítás (egy felülről jövő fény, aréna szerinti erősség, a 0., 8. és 9. arénában
-  alulról), CPU-n számolva. Eltérés: a megvilágított textúrák a `colmap` sorának fényerejével modulálódnak, így a 48 fölötti
-  sorok kifehéredése (csillanás) hiányzik, és a textúrázás perspektivikus (az eredetiben affin).
+  alulról), CPU-n számolva. A `colmap` tábla hatását két textúrafokozat közelíti (sötétítés, 48 fölött
+  keverés a 137-es szín felé); eltérés, hogy a textúrázás perspektivikus (az eredetiben affin), és a keverés folytonos, nem
+  palettaszínekre kerekített.
 - A háttér az eredeti `bground.dat` elrendezését követi; a függőleges helyzete az eredeti képlete (`0x44556c`, `0x41d5b0`):
   y = 11 + trunc(250·cos(dőlés))/2, a `0x4f1b5a` = 178 minden arénában.
 - A kamera a mozdulatok kamera-előbeállításait, a ring szélén használt nézetet és a rögzített nézeteket az eredeti szerint kezeli. A saját sebzésre (op 100–149) a kamera függőlegesen megrázkódik (0,1 amplitúdó, tickenként 45°, 0,008-cal csillapodik).
