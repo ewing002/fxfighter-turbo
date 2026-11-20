@@ -41,7 +41,10 @@ jobs:
           cp build/fxfighter.exe dist/FXFighterTurbo/
           cp /mingw64/bin/SDL2.dll dist/FXFighterTurbo/
           cp README.md dist/FXFighterTurbo/
-          cd dist && 7z a -tzip FXFighterTurbo-windows.zip FXFighterTurbo >/dev/null || zip -qr FXFighterTurbo-windows.zip FXFighterTurbo
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/FXFighterTurbo -DestinationPath dist/FXFighterTurbo-windows.zip
 
       - uses: actions/upload-artifact@v5
         with:
