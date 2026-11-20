@@ -1,66 +1,66 @@
-# Roadmap – az FX Fighter Turbo teljes portja
+# Roadmap – the full port of FX Fighter Turbo
 
-## Az eredeti felépítése (az EXE assert-üzeneteiből)
-`C:\Projects\Turbo\Source\`: `Fight.c` (harcmotor), `Fsupport.c` (harcos betöltése), `FXInit.c`, `winfront.c` (menük),
-`Sfxroot.c`/`Sfxproj.c`/`Fsound.c`/`Windsoun.c` (hang), `Effects.c`, `Sprlib.c`/`Sprplay.c` (2D sprite-ok, HUD),
+## Structure of the original (from the EXE's assert messages)
+`C:\Projects\Turbo\Source\`: `Fight.c` (fight engine), `Fsupport.c` (fighter loading), `FXInit.c`, `winfront.c` (menus),
+`Sfxroot.c`/`Sfxproj.c`/`Fsound.c`/`Windsoun.c` (sound), `Effects.c`, `Sprlib.c`/`Sprplay.c` (2D sprites, HUD),
 `Pixmap.c`, `Fastfile.c` (PAC), `Video.c` (FMV), `continue.c`, `Credits.c`, `Poollist.c`, `Dump.c`.
-Fordító: Watcom C/386 (regiszteres hívási konvenció: eax, edx, ebx, ecx).
-A BRender statikusan van belinkelve, fixpontos (16.16) buildként.
+Compiler: Watcom C/386 (register calling convention: eax, edx, ebx, ecx).
+BRender is statically linked, a fixed-point (16.16) build.
 
-## Hasznos címek a FIGHT.EXE-ben
-| Cím | Mit csinál |
+## Useful addresses in FIGHT.EXE
+| Address | What it does |
 |---|---|
-| `0x41c300–0x41c500` | harcos betöltése (`fm%d.dat`, `shadow%d.dat`, `f%d.ani`, `f%d.cmp`) |
-| `0x41f0a0` | `.ani` betöltő |
-| `0x445dc8` | testrész-actorok felépítése (lapos lista) |
-| `0x445f16` | **képkocka alkalmazása a csontokra** (a portban `ani_bone_matrix`) |
-| `0x445430` | a harc fő ciklusának egy része (frissítés és póz mindkét harcosra) |
+| `0x41c300–0x41c500` | fighter loading (`fm%d.dat`, `shadow%d.dat`, `f%d.ani`, `f%d.cmp`) |
+| `0x41f0a0` | `.ani` loader |
+| `0x445dc8` | building the body-part actors (flat list) |
+| `0x445f16` | **applying a frame to the bones** (`ani_bone_matrix` in the port) |
+| `0x445430` | part of the fight's main loop (update and pose for both fighters) |
 | `0x466c90` | BrModelLoadMany |
 | `0x46d490` / `0x46e5c0` / `0x46e700` / `0x46e960` | BrMatrix34RotateZ / PostRotateX / PostRotateY / PostTranslate |
-| `0x4a8780 + i*4` | klipszám harcosonként |
-| `0x4c71e0 + i*4` | animációs tábla pointere harcosonként |
-| `0x4231c0` | **kamera**: távolság 0,9·D + 1,6, a függőlegestől mért szög 95 − D/0,3 fok, magasság +0,5, a harcvonal követése 30 fokos holtsávval. D = √(dx² + dy² + h²) a követett medence-pozíciókból (`a8320`/`a8330`: 0,1 holtsáv, ¼ sebesség), h = a magasabb medence (csak 3-nál kisebb távolságnál frissül); a középpont a követett pozíciók átlaga, 0,01-es holtsávval |
-| `0x42106c` / `0x4a4be8` | kamera-előbeállítások (128 db: szög, dőlés, távolság, sebesség), a mozdulatok 0x21-es bájtja választja ki |
-| `0x41d5b0` | háttér: a kamerához rögzített `bground.dat` sáv, kameraforduló = 320 egység görgetés |
-| `0x4221b2` | kamerarendező: mozdulatkamera; ring széle (harcos a széltől 1,8-on belül, távolság < 4: szög 90 ± 12·(3,5 − táv), dőlés 83 − 8·(3,5 − táv)), ha a részletesség (`0x4a5888`) ≥ 1 |
-| `0x421728` | rögzített nézetek: Home be/ki (`4a4be0`), Ins/Del a 8–15. előbeállítás, PgUp/PgDn távolság (2–8), nyilak szög/dőlés (30–80) |
-| `0x44c666` / `0x44cba0` / `0x44d868` | sprite-effekt kérése (sor, képkockánként 4), indítása, a `.slb` szkript értelmezője (`src/sprfx.c`) |
-| `0x433350` / `0x433630` | a meccs `.slb` könyvtárainak betöltése, effekt keresése azonosító és játékos szerint |
-| `0x4491f7` | találatvizsgálat: a támadó végtagjainak dobozai összevonva (`0x448a69`, z-ben a kisebbik felső határ) + az előző vizsgálat doboza (söprés); zóna a talált kocka középpontjából |
-| `0x43fbca` / `0x4408f9` / `0x43f36e` | taszítás, ringhatár (a harcvonal mentén mérve), ringből kiesés (csak a középtől messzebb lévő harcos) |
-| `0x440f42` | ugrás és földet érés (a8290: függőleges eltolás, a legalsó láb a talajra igazítva) |
-| `0x496150` | 1 játékos létra: harcosonként 4 sorrend × 15 bájt (7 harcos, majd a főellenségek: 10, 11, 9), a 12-es sorai üresek |
+| `0x4a8780 + i*4` | clip count per fighter |
+| `0x4c71e0 + i*4` | animation table pointer per fighter |
+| `0x4231c0` | **camera**: distance 0.9·D + 1.6, angle from the vertical 95 − D/0.3 degrees, height +0.5, following the fight line with a 30-degree dead zone. D = √(dx² + dy² + h²) from the tracked pelvis positions (`a8320`/`a8330`: 0.1 dead zone, ¼ speed), h = the higher pelvis (updated only at distances below 3); the center is the average of the tracked positions, with a 0.01 dead zone |
+| `0x42106c` / `0x4a4be8` | camera presets (128 of them: angle, tilt, distance, speed), selected by byte 0x21 of the moves |
+| `0x41d5b0` | background: the `bground.dat` strip fixed to the camera, a camera turn = 320 units of scrolling |
+| `0x4221b2` | camera director: move camera; ring edge (fighter within 1.8 of the edge, distance < 4: angle 90 ± 12·(3.5 − dist), tilt 83 − 8·(3.5 − dist)), if the detail level (`0x4a5888`) ≥ 1 |
+| `0x421728` | fixed views: Home on/off (`4a4be0`), Ins/Del the 8th–15th preset, PgUp/PgDn distance (2–8), arrows angle/tilt (30–80) |
+| `0x44c666` / `0x44cba0` / `0x44d868` | requesting a sprite effect (queue, 4 per frame), starting it, the `.slb` script interpreter (`src/sprfx.c`) |
+| `0x433350` / `0x433630` | loading the match's `.slb` libraries, looking up an effect by ID and player |
+| `0x4491f7` | hit detection: the boxes of the attacker's limbs merged (`0x448a69`, in z the smaller upper bound) + the previous check's box (sweep); zone from the center of the hit cube |
+| `0x43fbca` / `0x4408f9` / `0x43f36e` | repulsion, ring boundary (measured along the fight line), ring-out (only the fighter farther from the center) |
+| `0x440f42` | jump and landing (a8290: vertical offset, the lowest foot aligned to the ground) |
+| `0x496150` | 1 player ladder: per fighter 4 orders × 15 bytes (7 fighters, then the bosses: 10, 11, 9), the rows of 12 are empty |
 
-## Mérföldkövek
-1. ✅ **Asset-néző**: modellek, textúrák, arénák, animációk
-2. ✅ **Mozdulatrendszer** (kész: `src/fight.c`): a `moves/*.hdr` 16 bájtos paraméterei (klipindex, framek, sebzés, hitbox?), a `.ste` állapotgép, az input → mozdulat leképezés.
-   Ehhez a `Fight.c` függvényeit kell visszafejteni, amelyek a `moves` adatokat olvassák (a `fight/moves/f%d.hdr` sztring xref-jeiből kiindulva).
-3. ✅ **Harc**: ízületi találati kockák, folyamatos találatvizsgálat, sebzés, blokk, reakciók, dobások (idegen tábla), KO, körök, időzítő, forgó harcvonal, oldalazás, ugrás és kitörés, ringhatár, ringből kiesés, kábulás (`cb3f8`), kombó-skálázás (`0x4aa470`), kiszabadulás nyomkodással (0xCC–0xCE) · ⏳ lábak talajhoz igazítása (`a8290`)
-4. ✅ **HUD és menük**: `boutgfx/*.pix` sprite-ok (az aréna palettájával), `frontend/align.pix` (saját palettás, fejjel lefelé tárolt képek), `back1.pix`,
-   betöltőkép, főmenü, karakter- és arénaválasztó, VS, 3 körös meccs, 1 játékos létra · ⏳ opciók menü (BESTO1..7, idő, nehézség, irányítás),
-   folytatás (`continue.fxl`, `p1cont.cmp`), stáblista, rekordtábla (✅ a 3D menüben)
-5. ✅ **Hang**: CD-zene MP3-ként, `.asf` hangeffektek, bankok, bemondó, menühangok. Az eredeti nem használ térhatást (nincs
-   pan, hangmagasság vagy távolság szerinti halkítás); a `.slb` fájlok nem hangparaméterek, hanem sprite-effektkönyvtárak
-   (✅ `src/sprfx.c`: blokk-szikrák, vér, a különleges mozdulatok effektjei, vízi fröccsenés, teleport; lásd `docs/FORMATS.md`.
-   A lövedékek (`Sfxproj.c`) halott kód: a Turbo mozdulattáblái nem indítják őket)
-6. ✅ **AI**: az eredeti `0x425892` visszafejtve (`ai_think` a `src/fight.c`-ben, leírás: `docs/FORMATS.md`), nehézségi szint az OPTIONS menüben ·
-   a `0x424d8f` ringszél-vizsgálat is az eredeti szerint (a követett medencétől 2 egységre: balra, jobbra vagy hátra)
-7. **Extrák**: gamepad (SDL_GameController), szélesvásznú kép, magas felbontás, FMV-lejátszó (✅ `src/video.c`).
+## Milestones
+1. ✅ **Asset viewer**: models, textures, arenas, animations
+2. ✅ **Move system** (done: `src/fight.c`): the 16-byte parameters of `moves/*.hdr` (clip index, frames, damage, hitbox?), the `.ste` state machine, the input → move mapping.
+   This required reverse-engineering the `Fight.c` functions that read the `moves` data (starting from the xrefs of the `fight/moves/f%d.hdr` string).
+3. ✅ **Fight**: joint hit cubes, continuous hit detection, damage, block, reactions, throws (foreign table), KO, rounds, timer, rotating fight line, sidestepping, jump and breakout, ring boundary, ring-out, daze (`cb3f8`), combo scaling (`0x4aa470`), breaking free by mashing (0xCC–0xCE) · ⏳ aligning the feet to the ground (`a8290`)
+4. ✅ **HUD and menus**: `boutgfx/*.pix` sprites (with the arena's palette), `frontend/align.pix` (own palette, images stored upside down), `back1.pix`,
+   loading screen, main menu, character and arena selector, VS, 3-round match, 1 player ladder · options menu (BESTO1..7, time, difficulty, controls),
+   continue (`continue.fxl`, `p1cont.cmp`), credits and high-score table: all done in the 3D front end (see `docs/FRONTEND.md`)
+5. ✅ **Sound**: CD music as MP3, `.asf` sound effects, banks, announcer, menu sounds. The original uses no spatial audio (no
+   pan, pitch or distance attenuation); the `.slb` files are not sound parameters but sprite-effect libraries
+   (✅ `src/sprfx.c`: block sparks, blood, the effects of the special moves, water splash, teleport; see `docs/FORMATS.md`.
+   Projectiles (`Sfxproj.c`) are dead code: Turbo's move tables do not launch them)
+6. ✅ **AI**: the original `0x425892` reverse-engineered (`ai_think` in `src/fight.c`, description: `docs/FORMATS.md`), difficulty level in the OPTIONS menu ·
+   the `0x424d8f` ring-edge check also follows the original (2 units from the tracked pelvis: left, right or back)
+7. **Extras**: gamepad (SDL_GameController), widescreen, high resolution, FMV player (✅ `src/video.c`).
 
-## Ismert hibák
-- ~~A harcosok és arénák textúrái hibásak voltak~~ → javítva (4×4-es csempe, modellenként egy csempe).
-- A színezés az eredeti BRender-indexvilágítás (egy felülről jövő fény, aréna szerinti erősség, a 0., 8. és 9. arénában
-  alulról), CPU-n számolva. A `colmap` tábla hatását két textúrafokozat közelíti (sötétítés, 48 fölött
-  keverés a 137-es szín felé); eltérés, hogy a textúrázás perspektivikus (az eredetiben affin), és a keverés folytonos, nem
-  palettaszínekre kerekített.
-- A háttér az eredeti `bground.dat` elrendezését követi; a függőleges helyzete az eredeti képlete (`0x44556c`, `0x41d5b0`):
-  y = 11 + trunc(250·cos(dőlés))/2, a `0x4f1b5a` = 178 minden arénában.
-- A kamera a mozdulatok kamera-előbeállításait, a ring szélén használt nézetet és a rögzített nézeteket az eredeti szerint kezeli. A saját sebzésre (op 100–149) a kamera függőlegesen megrázkódik (0,1 amplitúdó, tickenként 45°, 0,008-cal csillapodik).
-  A „SAT CAM / CAR CAM / SIDE CAM” BRender-kamerák (`0x4a1e38`) halott adatok, semmi nem hivatkozik rájuk.
-- Az ugrás íve most az eredeti képlet (FUN_00440f42: (t·v + t²·g/2)·s + 0,3), kb. 1,4 m magas. A talajhoz igazítás a modellek legalsó csúcspontját használja, így a talp a padlón áll.
-- Ugrás közben a harcos nem jut ki a ringből (saját döntés); ütés, dobás vagy kilépés után továbbra is ki lehet esni.
-- A ringből kiesés után gravitációval zuhan, és az aréna alsó szintjén ér földet (ha ott van geometria). A kamera ilyenkor a kiesőre áll; ez a beállítás saját, nem az eredetiből való.
-- A kábulásnak nincs külön látványeleme: a `0x4f1a48 = 0x17f` (`0x449148`) írás halott, semmi nem olvassa; a látható rész a DAZE mozdulat, ez a portban is megvan.
-- A portrék és a harcosok összerendelése a `frontend/demo.mat` anyagaiból jön (pl. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
-- A menük az eredeti 3D jelenetek, az eredeti szkriptekkel (`docs/FRONTEND.md`); a régi 2D-s menük kikerültek.
-- Jerzan (fm12.dat, `pan_cr12`) az eredetiben félbehagyott: a létratáblájában nem szerepel, a teste pontnyira zsugorított, az animációja Magnoné. A portban rejtett harcos (bővítés): Magnon testrészeivel és Jerzan textúrájával jelenik meg, a választóban Magnonon rúgás + ütéssel választható.
+## Known issues
+- ~~The textures of fighters and arenas were wrong~~ → fixed (4×4 tile, one tile per model).
+- The shading is the original BRender index lighting (one light from above, strength depending on the arena, from
+  below in the 0th, 8th and 9th arenas), computed on the CPU. The effect of the `colmap` table is approximated by two texture
+  levels (darkening, above 48 blending toward color 137); the differences are that the texturing is perspective-correct (affine in the original),
+  and the blending is continuous, not rounded to palette colors.
+- The background follows the layout of the original `bground.dat`; its vertical position is the original formula (`0x44556c`, `0x41d5b0`):
+  y = 11 + trunc(250·cos(tilt))/2, with `0x4f1b5a` = 178 in every arena.
+- The camera handles the moves' camera presets, the view used at the ring edge and the fixed views as in the original. On own damage (op 100–149) the camera shakes vertically (0.1 amplitude, 45° per tick, damped by 0.008).
+  The "SAT CAM / CAR CAM / SIDE CAM" BRender cameras (`0x4a1e38`) are dead data, nothing references them.
+- The jump arc is now the original formula (FUN_00440f42: (t·v + t²·g/2)·s + 0.3), about 1.4 m high. The ground alignment uses the lowest vertex of the models, so the sole stands on the floor.
+- During a jump the fighter cannot leave the ring (our own decision); after a punch, throw or step out he can still fall out.
+- After a ring-out the fighter falls with gravity and lands on the arena's lower level (if there is geometry there). The camera then targets the fighter who fell; this setting is our own, not from the original.
+- Daze has no separate visual element: the write `0x4f1a48 = 0x17f` (`0x449148`) is dead, nothing reads it; the visible part is the DAZE move, which the port has too.
+- The pairing of portraits and fighters comes from the materials of `frontend/demo.mat` (e.g. KIKO → PLYR2, LINNA → PLYR6, KWONDO → PLYR9).
+- The menus are the original 3D scenes, with the original scripts (`docs/FRONTEND.md`); the old 2D menus were removed.
+- Jerzan (fm12.dat, `pan_cr12`) is unfinished in the original: he does not appear in the ladder table, his body is shrunk to a point, his animation is Magnon's. In the port he is a hidden fighter (extension): he appears with Magnon's body parts and Jerzan's texture, and in the selector he can be chosen on Magnon with kick + punch.

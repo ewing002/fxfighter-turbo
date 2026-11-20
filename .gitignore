@@ -1,18 +1,20 @@
-# Az eredeti játékból származó anyagok (nem a port része)
+# Original game content (never commit; each user supplies their own copy)
 fight_decomp.c
 *.PAC
 *.pac
 *.mp3
-
-# Build-kimenetek
-build/
-build-win/
-fs
-fs.exe
-*.o
-*.ppm
 *.brp
 *.BRP
 *.clt
 *.CLT
 video/
+music/
+
+# Build output
+build/
+build-*/
+dist/
+fs
+fs.exe
+*.o
+*.ppm

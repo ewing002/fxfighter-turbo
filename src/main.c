@@ -386,7 +386,7 @@ static int g_draw_mode = DM_TEX;
 /* the floor pass: the floor materials (0x41cdcd) instead of the fighter ones */
 static int g_floor_pass;
 
-/* ---- BRender index lighting (SOFTRNDX, see docs/FORMATS.md "Színezés") ----
+/* ---- BRender index lighting (SOFTRNDX, see docs/FORMATS.md "Shading") ----
  * One direct light along world +Z with strength s = 1 / attenuation_c (0x4a4470[arena]: 0.9, or -0.6 in
  * arenas 0, 8, 9 = lit from below), no ambient light. Per vertex (Gouraud) or per face:
  *   l = ka + (d > 0 ? kd d + spec : 0),  d = s (n . L),  spec = h > 0.6172 ? h ks s / (p - p h + h) : 0,

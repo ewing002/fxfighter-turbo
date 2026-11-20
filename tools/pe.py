@@ -1,6 +1,6 @@
 import struct,sys
 import os
-# FIGHT.EXE helye: FIGHT_EXE környezeti változó, alapból ../FIGHT.EXE (a port mappájából futtatva)
+# FIGHT.EXE location: the FIGHT_EXE environment variable, default ../FIGHT.EXE (when run from the repo folder)
 d=open(os.environ.get('FIGHT_EXE', '../FIGHT.EXE'),'rb').read()
 pe=struct.unpack_from('<I',d,0x3c)[0]
 ns=struct.unpack_from('<H',d,pe+6)[0]; osz=struct.unpack_from('<H',d,pe+20)[0]

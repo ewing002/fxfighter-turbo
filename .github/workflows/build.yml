@@ -1,0 +1,56 @@
+# Builds the Windows program on every push and, for a tag like v1.0, publishes it as a GitHub Release.
+# The release zip holds only fxfighter.exe, SDL2.dll and the README (no game data: the user supplies FIGHT.PAC and FIGHT.EXE).
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-SDL2
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: |
+          mkdir -p dist/FXFighterTurbo
+          cp build/fxfighter.exe dist/FXFighterTurbo/
+          cp /mingw64/bin/SDL2.dll dist/FXFighterTurbo/
+          cp README.md dist/FXFighterTurbo/
+          cd dist && 7z a -tzip FXFighterTurbo-windows.zip FXFighterTurbo >/dev/null || zip -qr FXFighterTurbo-windows.zip FXFighterTurbo
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: FXFighterTurbo-windows
+          path: dist/FXFighterTurbo-windows.zip
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/FXFighterTurbo-windows.zip
+          generate_release_notes: true

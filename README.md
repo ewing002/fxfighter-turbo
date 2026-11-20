@@ -1,132 +1,208 @@
-# FX Fighter Turbo – nyílt port (C11 + SDL2 + OpenGL)
+# FX Fighter Turbo – open port (C11 + SDL2 + OpenGL)
 
-Új, platformfüggetlen kód, amely **az eredeti `FIGHT.PAC` adatait használja**. Az eredeti EXE-t nem futtatja és nem emulálja.
-Windows 10/11-en, Linuxon és macOS-en is fordítható.
+A native, cross-platform rewrite of the 1996 Windows fighting game **FX Fighter Turbo**. It is new C code that reads the data of the
+**original game** (`FIGHT.PAC`). It does not run or emulate the original executable.
+It builds on Windows 10/11, Linux and macOS.
 
-## Állapot: 3. mérföldkő – teljes játékmenet menükkel
-- ✅ A `FIGHT.PAC` archívum, az RLE textúrák, a paletták, a BRender modellek, anyagok és pixmapok olvasása
-- ✅ Mind a 12 aréna (padló + 360°-os háttér) és a harcosok textúrázott 3D modelljei
-- ✅ **Csontanimációk**: a formátum és a csontmátrix képlete az EXE-ből visszafejtve, minden klip lejátszható
-- ✅ **Mozdulatrendszer**: az eredeti `moves/*.hdr`/`.ste` állapotgép, az EXE-ből visszafejtve (ütések, rúgások, kombók, blokk, guggolás, ugrás, gurulás)
-- ✅ **Harc**: találatvizsgálat a testrészek alapján, reakciótáblák, sebzés, KO, körök, időzítő, életerőcsíkok
-- ✅ **3D mozgás**: forgó harcvonal (oldalazás, lendítő ütések), ugrás, kitörés, valódi ringméret, **ringből kiesés** (zuhanás az aréna alsó szintjére), a lábak nem süllyednek a talajba
-- ✅ **Kamera az EXE-ből**: alacsony, a harcosok távolságától függő nézet, 45°-os látószög, mozdulatokhoz kötött kamera-beállítások (dobások, győzelem); a háttér az eredeti módon görög
-- ✅ **Zene**: a CD zenei sávjai MP3-ként (`port/music/trackNN.mp3`), arénánként az eredeti sáv (aréna + 2)
-- ✅ **Hangeffektek**: az eredeti `.asf` minták (bitpontos DPCM-dekóder), harcos-, aréna- és bemondóbankok (`.fxl`), mozdulatokhoz kötött hangok
-- ✅ **Menük és HUD az eredeti grafikákkal**: betöltőképernyő, főmenü, karakterválasztó portrékkal, arénaválasztó (2 játékos), VS-képernyő bemondóval,
-  ROUND / FIGHT! / KO / RING OUT! / TIME OVER / WINNER / YOU WIN / YOU LOSE / GAME OVER feliratok, eredeti életerőcsík, időzítő és névcímkék
-- ✅ **Meccsek**: 3 körből 2 nyert kör kell. 1 játékos módban sorban jön a többi 10 harcos, mindig az ellenfél saját arénájában. Vereség = GAME OVER.
-- ✅ **Gépi ellenfél**: az eredeti AI visszafejtve, 8 nehézségi szinttel
-- ✅ **Rekordtábla**: a létra végén az eredeti névbeíró képernyő és táblázat, mentve a `hiscores.dat`-ba
-- ✅ **Videók (FMV)**: az eredeti intró és logók, a létra végi és a game over videó, a CD-ről (lásd lent)
-- ✅ **Stáblista**: a létra végén a WIN videó után a munkatársak klipjei a bemondott nevekkel, majd a görgetett névsor
+**The game data is not included.** The repository contains no original game content and no binaries. You need your own copy of
+FX Fighter Turbo; the program reads its files at run time.
 
-## Futtatás Windows alatt
-Indítsd el a `port\bin-win64\fxfighter.exe`-t. A program magától megtalálja a két szinttel feljebb lévő `FIGHT.PAC`-ot.
-Ha máshová teszed, a `FIGHT.PAC`-ot rakd mellé, vagy add meg az útvonalát paraméterként.
+## Requirements
+Your own copy of the original game is needed. Put the files below in the folder you run the game from (or next to the executable):
 
-**Menük:** az eredeti 3D menük futnak: a menüszkripteket a port a saját `FIGHT.EXE`-dből olvassa ki (a `FIGHT.PAC` mellől),
-és az eredeti módon futtatja őket. Az 1. játékos a W/A/S/D gombokkal mozog, és F-fel (vagy Enterrel, Space-szel) választ, G = rúgás.
-A 2. játékos a nyilakkal mozog, és K-val választ, L = rúgás. Vissza és kilépés: Esc (vagy Backspace). Az OPTIONS menüben a SAVE gomb
-menti a beállításokat, a LOAD visszatölti őket. A menetidő, a menetek száma, a nehézség és a hangerők akkor is érvényesek, ha nem mented őket.
-A menükhöz kell a `FIGHT.EXE`; ha hiányzik, a program hibaüzenettel kilép (menü nélküli harc: `--p1 N --p2 N`, lásd lent).
-A gombokat az OPTIONS → CONTROLS → REDEFINE KEYS menüben lehet átállítani (ATTACK = előre, RETREAT = hátra a kezdőoldalról nézve);
-a menüben és harcban is ezek érvényesek, a SAVE elmenti őket. Az alábbi táblázat az alapkiosztást mutatja.
-Elveszett 1 játékos meccs és minden 2 játékos meccs után az eredeti CONTINUE képernyő jön (10 mp): ütés vagy rúgás = folytatás
-(1P: új harcos, a létra ugyanott folytatódik; 2P: harcosválasztó), más gomb gyorsítja, lejáratkor vissza a főmenübe.
-`quick_continue=1` (az OPTIONS QUICK CONTINUE pontja) mellett az ütés azonnali visszavágót indít.
-Rejtett harcos: a harcosválasztóban Magnonon állva tartsd nyomva a rúgást, és úgy nyomd meg az ütést: Jerzan jön, az eredeti
-félbehagyott 12. harcosa (a port a hiányzó testét Magnonéból pótolja). 1 és 2 játékos módban is működik.
-Kihívó: egyjátékos létra közben a 2. játékos ütés gombja (vagy a második kontroller Start gombja) megszakítja a meccset,
-és a 2 játékos harcosválasztó jön (a port bővítése; `challenger=0` kikapcsolja).
-ENDURANCE: két, legfeljebb 4 fős csapat; a menet vesztese hozza a következő harcosát, a győztes megtartja az életét, időkorlát nincs.
-TOURNAMENT: 4 vagy 8 induló (ember vagy gép), minden helyet kijátszanak; a gépi meccseket bármelyik gomb átugorja (véletlen győztessel).
-Az eredeti sprite-effektjei (`fight/sfx/*.slb`) is látszanak: blokk-szikra, vér, a különleges mozdulatok lángjai és szikrái,
-vízi arénában a fröccsenés, a meccs elején a teleport. A hálózati játék szándékosan kimaradt.
-Harc közben F1–F4 a két harcos textúráját és árnyalását kapcsolja, F5 a padlótextúrát (ki / be / perspektivikus), F6 a hátteret.
-A padló részletessége (`detail6` az `options.cfg`-ben, 0–2) az aréna betöltésekor hat; 0-nál, mint az eredetiben,
-nincs padlómodell, és ringből kiesés sincs.
+- `FIGHT.PAC` – **required**. The game's data archive, from your copy of the original game. The program looks for it in this order:
+  1. the path given as the first command-line argument (`fxfighter path\to\FIGHT.PAC`);
+  2. `FIGHT.PAC`, `../FIGHT.PAC`, `../../FIGHT.PAC`, `fight.pac` relative to the current working directory;
+  3. `FIGHT.PAC`, `../FIGHT.PAC`, `../../FIGHT.PAC` relative to the folder of the executable.
 
-**Kontroller (gamepad):** Xbox-, PlayStation- és más SDL-kompatibilis kontrollerek, menet közben is csatlakoztathatók. Az első kontroller az 1. játékosé, a második a 2. játékosé.
-Harcban: d-pad vagy bal kar = mozgás, X / Y / LB / LT = ütés, A / B / RB / RT = rúgás, Start = szünet, Back/Select = vissza a főmenübe.
-Menükben: d-pad vagy bal kar = mozgás, A / X / Start = választás, Y = rúgás, B / Back = vissza. Ha a fighter sérül, a kontroller rezeg (kikapcsolható).
+  On Linux and macOS file names are case-sensitive, so use exactly these spellings.
+- `FIGHT.EXE` – **required for the menus**, and it must be in the same folder as `FIGHT.PAC`. The original 3D menu scripts are read from its
+  `.data` section at run time and executed by the port's script VM. Without it the program shows an error and exits.
+  A fight without menus works without it: `fxfighter FIGHT.PAC --p1 N --p2 N`.
+- `music/trackNN.mp3` – optional. CD audio tracks `track02.mp3` … `track14.mp3`. Without them the game runs silently (sound effects still play).
+  Make them from your CD image (BIN + CUE) with `tools/rip_cd.py`, which needs Python 3 and `ffmpeg` (with `libmp3lame`) on the `PATH`
+  (see [Music](#music)). The program uses the first of these folders that contains `track03.mp3`:
+  `music/` next to the executable, `../music/` relative to the executable, `port/music/` and `music/` next to `FIGHT.PAC`,
+  `music/` and `../music/` relative to the working directory.
+  Track meaning: 2 = credits, 3–13 = the arenas (arena number + 2), 14 = attract (demo) mode.
+- `video/*` – optional full-motion video (intro, logos, the videos at the end of the ladder and on game over, the credits clips).
+  Copy them from the CD with `tools/rip_video.py` (Python 3 only; it writes `*.brp`, `*.clt` and `*.pal` files, see [Videos](#videos)).
+  The program looks for each video in: `video/` next to the executable, `../video/` relative to the executable, `port/video/` and `video/` next to
+  `FIGHT.PAC`, and `FIGHT/VIDEO/` next to `FIGHT.PAC` (the installed game's own folder). A video that is not found is skipped and the game goes on.
+- Settings and high scores are written to the per-user folder returned by SDL: on Windows `%APPDATA%\FXFighter\Turbo\`
+  (`options.cfg`, `hiscores.dat`); on Linux and macOS the SDL equivalent (normally `~/.local/share/FXFighter/Turbo/` and
+  `~/Library/Application Support/FXFighter/Turbo/`). The environment variable `FX_PREFDIR=<folder>` redirects both files (used by the tests).
 
-**Beállítások:** a menetidő, a menetek száma, a nehézség, a játéksebesség (48 / 60 / 66,7 képkocka/s, a menetóra valós időben jár), a hendikep, a hangerők és a gombok a 3D menü OPTIONS részében állíthatók.
-A többi csak az `options.cfg`-ben: `fullscreen` (0/1, F11-gyel vagy Alt+Enterrel is), `vsync`, `ringouts` (ringből kiesés), `rumble` (rezgés),
-`round_time=99` (az eredetiben nincs ilyen menetidő).
-`ring_guard` (alapból 1): az emberi játékos a saját mozgásával (lépés, támadás, ugrás) nem léphet ki a gyűrűből, csak ütés, lökés vagy dobás
-viheti ki; 2 játékos módban az ellenfél teste sem tolhatja ki. 0 = az eredeti viselkedés, ahol a peremen túl is el lehet lépni.
-`input_buffer` (alapból 4, 0–12 tick): az ütés- és rúgásgomb lenyomása ennyi tickig érvényes marad, amíg egy mozdulat fel nem használja;
-így egy mozdulat végére eső nyomás sem vész el (az eredetiben elveszett). 0 = az eredeti viselkedés. Csak az emberi játékosra hat.
-`challenger` (alapból 1): a kihívó becsatlakozhat egy futó egyjátékos meccsbe (lásd fent); 0 = kikapcsolva.
-A beállításokat a program elmenti (Windowson: `%APPDATA%\FXFighter\Turbo\options.cfg`); a 3D menük ugyanezt a fájlt használják. A rekordtábla ugyanitt van (`hiscores.dat`). A teljes képernyő F11-gyel vagy Alt+Enterrel is váltható.
+Example layout of a working folder (Windows):
+```
+FXFighter/
+  fxfighter.exe
+  SDL2.dll
+  FIGHT.PAC         (from the original game)
+  FIGHT.EXE         (from the original game)
+  music/            (optional)
+    track02.mp3 … track14.mp3
+  video/            (optional)
+    *.brp, *.clt, *.pal
+```
 
-**Harc** (alapkiosztás)
+**Windows builds.** The repository contains no binaries. The GitHub Actions workflow `.github/workflows/build.yml` builds the Windows version;
+its artifact (or the release zip) contains `fxfighter.exe` and `SDL2.dll`. Unpack them next to your game files as shown above. You can also
+[build it yourself](#building).
 
-| | 1. játékos | 2. játékos |
+## Status
+### Milestone 3 – complete gameplay with menus
+- Reading of the `FIGHT.PAC` archive, RLE textures, palettes, BRender models, materials and pixmaps
+- All 12 arenas (floor + 360° background) and the textured 3D fighter models
+- **Bone animation**: the format and the bone matrix formula were reverse-engineered from the EXE; every clip can be played
+- **Move system**: the original `moves/*.hdr` / `.ste` state machine, recovered from the EXE (punches, kicks, combos, block, duck, jump, roll)
+- **Fighting**: hit detection by body part, reaction tables, damage, KO, rounds, timer, health bars
+- **3D movement**: rotating fight line (sidestepping, swinging punches), jump, dash, real ring size, **ring-out** (a fall to the arena's lower level),
+  feet do not sink into the ground
+- **Camera from the EXE**: low view that depends on the distance between the fighters, 45° field of view, camera presets tied to moves
+  (throws, victory); the background scrolls like the original
+- **Music**: the CD audio tracks as MP3 (`music/trackNN.mp3`), one original track per arena (arena + 2)
+- **Sound effects**: the original `.asf` samples (bit-exact DPCM decoder), fighter, arena and announcer banks (`.fxl`), sounds tied to moves
+- **Menus and HUD with the original graphics**: loading screen, main menu, character select with portraits, arena select (2 players),
+  VS screen with announcer, ROUND / FIGHT! / KO / RING OUT! / TIME OVER / WINNER / YOU WIN / YOU LOSE / GAME OVER captions,
+  original health bar, timer and name tags
+- **Matches**: first to win 2 of 3 rounds. In 1-player mode the other 10 fighters follow in order, each in his own arena. A defeat means GAME OVER.
+- **Computer opponent**: the original AI, reverse-engineered, with 8 difficulty levels
+- **High-score table**: at the end of the ladder the original name-entry screen and table, saved in `hiscores.dat`
+- **Videos (FMV)**: the original intro and logos, the end-of-ladder video and the game-over video, from the CD (see below)
+- **Credits**: after the WIN video at the end of the ladder, the clips of the crew with the announced names, then the scrolling name list
+
+## Running
+Start `fxfighter.exe` from the folder that contains `FIGHT.PAC` and `FIGHT.EXE` (see [Requirements](#requirements)), or pass the path of
+`FIGHT.PAC` as the first argument.
+
+**Menus:** the original 3D menus run: the port reads the menu scripts from your `FIGHT.EXE` (next to `FIGHT.PAC`) and executes them the
+original way. Player 1 moves with W/A/S/D and selects with F (or Enter, Space); G = kick.
+Player 2 moves with the arrow keys and selects with K; L = kick. Back and quit: Esc (or Backspace). In the OPTIONS menu the SAVE button
+saves the settings and LOAD restores them. Round time, number of rounds, difficulty and volumes take effect even if you do not save them.
+The keys can be changed under OPTIONS → CONTROLS → REDEFINE KEYS (ATTACK = forward, RETREAT = back, seen from the starting side);
+they apply in the menus and in fights, and SAVE stores them. The table below shows the default layout.
+
+After a lost 1-player match and after every 2-player match the original CONTINUE screen appears (10 s): punch or kick = continue
+(1P: a new fighter, the ladder goes on where it was; 2P: fighter select), any other button speeds it up, on timeout you return to the main menu.
+With `quick_continue=1` (OPTIONS → QUICK CONTINUE) a punch starts an immediate rematch.
+
+Hidden fighter: in fighter select, stand on Magnon, hold the kick button and press punch: Jerzan appears, the unfinished 12th fighter of the
+original game (the port fills in his missing body from Magnon's). Works in 1-player and 2-player mode.
+
+Challenger: during a 1-player ladder, the punch button of player 2 (or the Start button of the second controller) interrupts the match
+and opens the 2-player fighter select (a port extension; `challenger=0` turns it off).
+
+ENDURANCE: two teams of up to 4 fighters; the loser of a round brings in his next fighter, the winner keeps his health, no time limit.
+
+TOURNAMENT: 4 or 8 entrants (human or computer), every place is played off; computer matches can be skipped with any button (random winner).
+
+The original sprite effects (`fight/sfx/*.slb`) are shown too: block sparks, blood, the flames and sparks of the special moves, splashes
+in the water arena, the teleport at the start of a match. Network play was deliberately left out.
+
+During a fight F1–F4 toggle the two fighters' textures and shading, F5 the floor texture (off / on / perspective), F6 the background.
+The floor detail (`detail6` in `options.cfg`, 0–2) takes effect when an arena is loaded; at 0, as in the original, there is no floor model
+and therefore no ring-out.
+
+**Gamepad:** Xbox, PlayStation and other SDL-compatible controllers; they can be connected during a game. The first controller belongs to player 1,
+the second to player 2.
+In a fight: d-pad or left stick = move, X / Y / LB / LT = punch, A / B / RB / RT = kick, Start = pause, Back/Select = back to the main menu.
+In the menus: d-pad or left stick = move, A / X / Start = select, Y = kick, B / Back = back. The controller rumbles when the fighter is hurt
+(can be switched off).
+
+**Settings:** round time, number of rounds, difficulty, game speed (48 / 60 / 66.7 frames/s; the round clock runs in real time), handicap,
+volumes and keys are set in the OPTIONS part of the 3D menu.
+Everything else is only in `options.cfg`:
+- `fullscreen` (0/1; also F11 or Alt+Enter), `vsync`, `ringouts` (ring-out), `rumble` (controller vibration),
+  `round_time=99` (a round time that the original does not have).
+- `ring_guard` (default 1): a human player cannot step out of the ring by his own movement (step, attack, jump); only a punch, push or throw can
+  take him out. In 2-player mode the opponent's body cannot push him out either. 0 = the original behavior, where you can walk past the edge.
+- `input_buffer` (default 4, 0–12 ticks): a punch or kick press stays valid for this many ticks until a move uses it, so a press that falls
+  at the very end of a move is not lost (in the original it was). 0 = the original behavior. It affects human players only.
+- `challenger` (default 1): the challenger can join a running 1-player match (see above); 0 = off.
+
+The settings are saved by the program (on Windows: `%APPDATA%\FXFighter\Turbo\options.cfg`); the 3D menus use the same file.
+The high-score table is in the same folder (`hiscores.dat`).
+
+**Fight** (default keys)
+
+| | Player 1 | Player 2 |
 |---|---|---|
-| balra / jobbra | A / D | ← / → |
-| ugrás / guggolás | W / S | ↑ / ↓ |
-| ütés / rúgás | F / G | K / L |
+| left / right | A / D | ← / → |
+| jump / duck | W / S | ↑ / ↓ |
+| punch / kick | F / G | K / L |
 
-A 2. játékost alapból a gép irányítja. **F3**: P2 ember/gép, **F4**: P1 gép (demó), **F5**: új kör, **P**: szünet, **R**: ringből kiesés be/ki, **M**: zene be/ki, **X**: hangeffektek be/ki, **− / =**: hangerő,
-**1 / 2**: P1 harcos csere, **9 / 0**: P2 harcos csere, **N**: következő aréna. Ezek a gyorsgombok nem élnek, ha egy emberi játékos harci gombja.
-Néhány mozdulat: hátra + ütés nyomva tartva = védekezés, le + rúgás = gurulás, előre nyomva tartva = futás.
+Player 2 is controlled by the computer by default. Some moves: hold back + punch = block, down + kick = roll, hold forward = run.
 
-**Néző mód (F1)**: ← / → animáció, ↑ / ↓ és PgUp / PgDn harcos, Space szünet, , / . léptetés.
-Harc közben: egérhúzás = kamera forgatása (a kamera magától követi a harcvonalat), görgő = zoom, B = háttér, F11 = teljes képernyő, **Esc = vissza a főmenübe**. A bemutató harcot (tétlenség után indul) bármelyik gomb megszakítja.
-Rögzített kameranézetek, mint az eredetiben: **Home** = be/ki, **Insert / Delete** = következő / előző a 8 nézetből, **PgUp / PgDn** = közelebb / távolabb,
-nyilak (ha a 2. játékos a gép) = forgatás és dőlés; Shift-tel finomabb lépések.
+The fight reads the buttons once per tick (48/s); a short press that falls between two reads is remembered, so even a quick tap is not lost
+(keyboard and controller). In 1-player mode player 2 is the computer. During a fight, as in the original: F1 / F2 = player 1's / player 2's
+texture on/off, F3 / F4 = their shading (Gouraud / flat), F5 = floor detail, F6 = floor texture (these two are only stored).
 
-A harc a gombokat tickenként (48/s) olvassa; a két olvasás közé eső rövid nyomást a port megjegyzi, így egy gyors koppintás sem vész el
-(billentyűzet és kontroller). A 2. játékost 1 játékos módban a gép irányítja. Harc közben, mint az eredetiben: F1 / F2 = az 1. / 2. játékos textúrája be/ki,
-F3 / F4 = árnyalása (Gouraud / sík), F5 = padló-részletesség, F6 = padlótextúra (ez a kettő csak tárolódik). Teszteléshez a parancssori
-harcban (`--p1 N --p2 N`) a régi gyorsgombok működnek (F1 nézet, F3/F4 gépi irányítás, F5 újraindítás, R/1/2/9/0/N).
+During a fight: mouse drag = rotate the camera (the camera follows the fight line by itself), wheel = zoom, B = background,
+F11 = fullscreen, **Esc = back to the main menu**. Any button interrupts the demo fight (it starts after idling).
+Fixed camera views, as in the original: **Home** = on/off, **Insert / Delete** = next / previous of the 8 views, **PgUp / PgDn** = closer / farther,
+arrow keys (when player 2 is the computer) = rotate and tilt; Shift gives finer steps.
 
-Parancssori opciók: `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (ezek kihagyják a menüt, és végtelen meccset indítanak),
-valamint `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
+For testing, the command-line fight (`--p1 N --p2 N`) has the older hotkeys:
+**F3**: P2 human/computer, **F4**: P1 computer (demo), **F5**: new round, **P**: pause, **R**: ring-out on/off, **M**: music on/off,
+**X**: sound effects on/off, **− / =**: volume, **1 / 2**: change P1 fighter, **9 / 0**: change P2 fighter, **N**: next arena
+(F1 = viewer). These hotkeys are inactive when a human player's fight button uses the key.
 
-## Videók
-Az eredeti videók (intró, logók, a létra végi és a game over jelenet, a stáblista klipjei) a CD-n vannak. A `tools/rip_video.py` kimásolja őket:
+**Viewer mode (F1)**: ← / → animation, ↑ / ↓ and PgUp / PgDn fighter, Space pause, , / . single step.
+
+**Command-line options:** `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (these skip the menu and start an endless match),
+and `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
+
+## Videos
+The original videos (intro, logos, the end-of-ladder and game-over scenes, the credits clips) are on the CD. `tools/rip_video.py` copies them
+out of the CD image (BIN, MODE1/2352; it reads the ISO 9660 data track and needs only Python 3):
 ```
-python3 tools/rip_video.py "cd/FX Fighter Turbo.bin" port/video
+python3 tools/rip_video.py "FX Fighter Turbo.bin" video
 ```
-A program a `video/` mappában keresi őket (a program mellett, eggyel feljebb vagy a `FIGHT.PAC` melletti `port/video`, `video`
-mappában). Ha nincsenek meg, a videók kimaradnak. Esc az egész sorozatot átugorja, más gomb csak az aktuális videót.
+The files are written in lower case (`*.brp`, `*.clt`, `*.pal`). Put the `video` folder in one of the places listed under
+[Requirements](#requirements). If a video is missing it is skipped. Esc skips the whole sequence, any other button only the current video.
 
-## Zene
-A játék eredetileg CD-audio sávokat játszott le. A `tools/rip_cd.py` a CD-képből (BIN + CUE) MP3-at készít:
+## Music
+The game originally played CD audio tracks. `tools/rip_cd.py` makes MP3 files (192 kbit/s) from the CD image (BIN + CUE). It needs Python 3 and
+`ffmpeg` with `libmp3lame` on the `PATH`:
 ```
-python3 tools/rip_cd.py "cd/FX Fighter Turbo.cue" "cd/FX Fighter Turbo.bin" port/music
+python3 tools/rip_cd.py "FX Fighter Turbo.cue" "FX Fighter Turbo.bin" music
 ```
-A program a zenét a `music/` mappában keresi: az exe mellett, egy szinttel feljebb, illetve a `FIGHT.PAC` melletti `port/music/` mappában.
-Ha nincs zene, a játék anélkül fut. Sávok: 2 = stáblista, 3–13 = az arénák (aréna + 2), 14 = demó mód.
+It writes `trackNN.mp3` for every audio track. The folders searched are listed under [Requirements](#requirements). Without music the game runs silently.
+Tracks: 2 = credits, 3–13 = the arenas (arena + 2), 14 = attract mode.
 
-## Fordítás
-**Linux/macOS:** SDL2 fejlesztői csomag kell hozzá (`libsdl2-dev` vagy `brew install sdl2`).
+## Building
+CMake builds the game (`fxfighter`) and the headless test tools (`fightsim`, `fecheck`, `fevm`, `brpcheck`).
+
+**Linux/macOS:** install the SDL2 development package (`libsdl2-dev`, or `brew install sdl2`), then:
 ```
 cmake -S . -B build && cmake --build build
 ```
-**Windows (MSVC vagy MinGW):** telepítsd az SDL2-t (vcpkg: `vcpkg install sdl2`), utána ugyanez a CMake-parancs.
-MinGW-vel kereszt-fordítva:
-```
-x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I<SDL2>/include/SDL2 src/main.c src/assets.c src/fight.c src/audio.c src/ui.c ^
-  src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c ^
-  -L<SDL2>/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o fxfighter.exe
-```
 
-## Mappák
-- `src/assets.[ch]`: az összes formátum betöltője
-- `src/fight.[ch]`: harcmotor (mozdulat-állapotgép, bemenet, találat, körök)
-- `src/tables.h`: az EXE statikus táblái (testrészcsoportok, reakciótáblák)
-- `src/main.c`: renderelés, kamera, bemenet, HUD, a 3D menü bekötése és a meccslogika, néző
-- `src/ui.[ch]`: a harc 2D sprite-jai (`boutgfx/*.pix`) 640×480-as virtuális képernyőn
-- `src/sprfx.[ch]`: a harc sprite-effektjei (`fight/sfx/*.slb`: szikra, vér, mozdulat-effektek, teleport)
-- `src/fe3d*.[ch]`: a 3D menü (eszközök, szkript-VM, renderelő)
-- `src/audio.[ch]`, `src/dr_mp3.h`: zene (MP3, dr_mp3 v0.7.2, public domain / MIT-0) és hangeffekt-keverő, `.asf`-dekóder
-- `tests/fightsim.c`: fej nélküli harcszimuláció (két CPU), regressziós teszthez
-- `tools/*.py`: Python-eszközök (kicsomagolás, dump, formátumkutatás)
-- `docs/FORMATS.md`: a visszafejtett formátumok leírása
-- `docs/ROADMAP.md`: a további munka terve
+**Windows (MSYS2 MinGW64):** in an MSYS2 MinGW64 shell:
+```
+pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build
+```
+Copy `SDL2.dll` (from `mingw64/bin`) next to `build/fxfighter.exe`. MSVC with vcpkg (`vcpkg install sdl2`) and the same CMake commands also works.
+The sources of `fxfighter` are `src/main.c`, `assets.c`, `fight.c`, `audio.c`, `ui.c`, `fe3d.c`, `fe3d_gl.c`, `fe3d_vm.c`, `video.c` and `sprfx.c`;
+OpenGL and SDL2 are the only libraries.
 
-A játékadatok (`FIGHT.PAC`) nincsenek benne a repóban, azokat az eredeti játékból kell venni.
+The CI workflow `.github/workflows/build.yml` produces the Windows build (`fxfighter.exe` + `SDL2.dll`) as an artifact and release zip.
+
+## Source layout
+- `src/assets.[ch]`: loaders for all the formats
+- `src/fight.[ch]`: the fight engine (move state machine, input, hits, rounds)
+- `src/tables.h`: the EXE's static tables (body part groups, reaction tables)
+- `src/main.c`: rendering, camera, input, HUD, hooking up the 3D menu, match logic, viewer
+- `src/ui.[ch]`: the fight's 2D sprites (`boutgfx/*.pix`) on a 640×480 virtual screen
+- `src/sprfx.[ch]`: the fight's sprite effects (`fight/sfx/*.slb`: sparks, blood, move effects, teleport)
+- `src/fe3d*.[ch]`: the 3D menu (assets, script VM, renderer)
+- `src/video.[ch]`: the FMV (`.brp`) player
+- `src/audio.[ch]`, `src/dr_mp3.h`: music (MP3, dr_mp3 v0.7.2, public domain / MIT-0), the sound effect mixer and the `.asf` decoder
+- `tests/fightsim.c`: headless fight simulation (two CPU players), for regression tests
+- `tests/fecheck.c`, `tests/fevm.c`, `tests/brpcheck.c`: front end asset check, script VM test, video decoder check
+- `tools/*.py`: Python tools (unpacking, dumps, format research, `rip_cd.py`, `rip_video.py`)
+- `docs/FORMATS.md`: description of the reverse-engineered formats
+- `docs/ROADMAP.md`: the plan for further work

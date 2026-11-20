@@ -1,96 +1,94 @@
-# FX Fighter Turbo – nyílt port
+# FX Fighter Turbo – open port
 
-## Cél
-Az eredeti Windows-os FX Fighter Turbo újraírása modern rendszerre. Új C/SDL2 kód fut az eredeti `FIGHT.PAC` adatain. A dokumentáció és a felhasználóval folytatott kommunikáció magyar nyelvű.
+## Goal
+A rewrite of the original Windows game FX Fighter Turbo for modern systems. New C/SDL2 code runs on the data of the original `FIGHT.PAC`.
+Documentation, code comments, commit messages and communication are in English.
 
-## Hol tart most
-- **Kész:** asset-betöltés (modellek, textúrák, arénák, animációk), harcmotor (ütések, blokk, dobás, ugrás, ringből kiesés, körök, időzítő), hang (CD-zene MP3-ban, ASF-effektek, bankok, bemondó), 3D kamera az EXE-ből visszafejtett paraméterekkel, HUD az eredeti sprite-okkal, főmenü, betöltőkép, karakter- és arénaválasztó, VS-képernyő, 3 körös meccs, 1 játékos létra (az eredeti sorrendtábla), gépi ellenfél (az eredeti AI, `0x425892`), kontrollertámogatás, OPTIONS menü nehézségi szinttel, mentett beállítások.
-- **Nincs élőben kipróbálva:** igazi Windowson és igazi kontrollerrel. A tesztek Linuxon, Xvfb-ben és headless szimulátorral futottak.
+## Status
+- **Done:** asset loading (models, textures, arenas, animations), fight engine (punches, block, throw, jump, ring-out, rounds, timer), audio (CD music as MP3, ASF effects, banks, announcer), 3D camera with parameters recovered from the EXE, HUD with the original sprites, main menu, loading screen, character and arena select, VS screen, 3-round match, 1-player ladder (the original order table), computer opponent (the original AI, `0x425892`), controller support, OPTIONS menu with difficulty level, saved settings.
+- **Not tried live:** on real Windows hardware with a real controller. Tests ran on Linux, in Xvfb and with the headless simulator.
 
-## Könyvtárszerkezet
-- `src/assets.[ch]` – PAC, CMP, pixmap, modell, anyag, ANI betöltés
-- `src/fight.[ch]` – harcmotor (mozgás, találat, állapotgép)
-- `src/audio.[ch]` – hangkeverő, ASF-dekóder, zene (`dr_mp3.h`)
-- `src/ui.[ch]` – a harc 2D sprite-jai (boutgfx), 640×480 virtuális képernyő
-- `src/sprfx.[ch]` – sprite-effektek (`fight/sfx/*.slb`): blokk-szikra, vér, mozdulat-effektek, teleport
-- `src/main.c` – renderelés, kamera, menük, meccslogika, bemenet, opciók
-- `src/fe3d.[ch]` – a 3D front end: jelenet-assetek és a szkript-bájtkód a `FIGHT.EXE`-ből (készül, lásd `docs/FRONTEND.md`)
-- `src/fe3d_gl.[ch]` – a 3D front end renderelője (háttér, két párhuzamos oldalnézet, fő perspektivikus nézet)
-- `src/fe3d_vm.[ch]` – a 3D front end szkript-VM-je (az eredeti bájtkódot futtatja; teszt: `tests/fevm.c`)
-- `tests/fecheck.c` – a front end assetjeinek ellenőrzése
-- `src/tables.h` – EXE-ből kinyert táblák (ütésvonalak, reakciók)
-- `tools/` – Python segédek (unpac, cmp, brmodel, brmat, ani, moves, asf, pixlib, rip_cd, pe, stratdis, menutab)
-- `tests/fightsim.c` – headless CPU-vs-CPU szimuláció
-- `docs/FORMATS.md`, `docs/ROADMAP.md`, `docs/FRONTEND.md`, `README.md` – formátumleírás, mérföldkövek, a 3D front end terve, használat
-- `bin-win64/` – Windows-os exe és SDL2.dll
+## Layout
+- `src/assets.[ch]` – PAC, CMP, pixmap, model, material, ANI loading
+- `src/fight.[ch]` – fight engine (movement, hits, state machine)
+- `src/audio.[ch]` – sound mixer, ASF decoder, music (`dr_mp3.h`)
+- `src/ui.[ch]` – the fight's 2D sprites (boutgfx), 640×480 virtual screen
+- `src/sprfx.[ch]` – sprite effects (`fight/sfx/*.slb`): block sparks, blood, move effects, teleport
+- `src/video.[ch]` – FMV (`.brp`) player
+- `src/main.c` – rendering, camera, menus, match logic, input, options
+- `src/fe3d.[ch]` – the 3D front end: scene assets and the script bytecode from `FIGHT.EXE` (see `docs/FRONTEND.md`)
+- `src/fe3d_gl.[ch]` – renderer of the 3D front end (background, two parallel side views, main perspective view)
+- `src/fe3d_vm.[ch]` – script VM of the 3D front end (runs the original bytecode; test: `tests/fevm.c`)
+- `tests/fecheck.c` – check of the front end assets
+- `tests/fightsim.c` – headless CPU-vs-CPU simulation
+- `tests/brpcheck.c` – video decoder check
+- `src/tables.h` – tables extracted from the EXE (hit lines, reactions)
+- `tools/` – Python helpers (unpac, cmp, brmodel, brmat, ani, moves, asf, pixlib, rip_cd, rip_video, pe, stratdis, menutab, brdump)
+- `docs/FORMATS.md`, `docs/ROADMAP.md`, `docs/FRONTEND.md`, `README.md` – format description, milestones, plan of the 3D front end, usage
+- The repository contains no binaries. Windows builds come from the GitHub Actions workflow `.github/workflows/build.yml` (`fxfighter.exe` + `SDL2.dll`).
 
-## Referenciaanyagok (nem része a repónak)
-- Eredeti `FIGHT.EXE` és `FIGHT.PAC` – a játék mappájából. A futtatáshoz a `FIGHT.PAC` kell.
-- Ghidra-dekompilált EXE (`fight_decomp.c`) – függvénykeresésre. Ha nincs meg, a `docs/FORMATS.md` és a kommentek az elsődleges forrás.
-- Kicsomagolt adatok – `tools/unpac.py` állítja elő a `FIGHT.PAC`-ból.
+## Reference material (not part of the repo)
+These must be supplied locally; the `.gitignore` excludes `fight_decomp.c`, `*.PAC`, `*.mp3` and `video/`.
+- The original `FIGHT.EXE` and `FIGHT.PAC` – from the original game folder. `FIGHT.PAC` is needed to run, `FIGHT.EXE` is needed for the 3D menus (and for `fecheck`).
+- `fight_decomp.c` – Ghidra export (decompiled C) of `FIGHT.EXE`, for looking up functions. If you do not have it, `docs/FORMATS.md` and the code comments are the primary source.
+- Unpacked data – `tools/unpac.py` produces it from `FIGHT.PAC`.
+- The CD image (BIN + CUE) – source of the music (`tools/rip_cd.py`) and the videos (`tools/rip_video.py`).
 
-Az EXE-ben való kereséshez használt cím-táblázat a `docs/ROADMAP.md` alján van.
+The address table used for searching the EXE is at the bottom of `docs/ROADMAP.md`.
 
-## Fordítás és futtatás
-- **Linux:** `mkdir -p build && cd build && cmake .. && make`
-- **Windows (MinGW keresztfordítás, SDL2 2.30.9):**
+## Build and run
+- **Linux/macOS:** `cmake -S . -B build && cmake --build build` (needs the SDL2 dev package). Targets: `fxfighter`, `fightsim`, `fecheck`, `fevm`, `brpcheck`.
+- **Windows (MSYS2 MinGW64):** `pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-make`, then in the MinGW64 shell:
   ```
-  S=<sdl2>/x86_64-w64-mingw32
-  x86_64-w64-mingw32-gcc -O2 -std=c11 -Dmain=SDL_main -I$S/include/SDL2 \
+  cmake -S . -B build -G "MinGW Makefiles" && cmake --build build
+  ```
+  Copy `SDL2.dll` (from `<MSYS2 root>/mingw64/bin`) next to `build/fxfighter.exe`. Without CMake, from Git Bash with `export PATH=<MSYS2 root>/mingw64/bin:$PATH`:
+  ```
+  gcc -O2 -std=c11 -Dmain=SDL_main -I<SDL2 dir>/include/SDL2 \
     src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c \
-    -L$S/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o bin-win64/fxfighter.exe
+    -L<SDL2 dir>/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o build-win/fxfighter.exe
   ```
-  A `SDL2.dll` a `bin-win64/` mappában van.
-- **Windows (natív, ezen a gépen):** MSYS2 MinGW64 gcc és SDL2 a `C:\msys64\mingw64` alatt. Git Bash-ből, a port mappájában:
-  ```
-  export PATH=/c/msys64/mingw64/bin:$PATH
-  mkdir -p build-win
-  gcc -O2 -std=c11 -Dmain=SDL_main -I/c/msys64/mingw64/include/SDL2 \
-    src/main.c src/assets.c src/fight.c src/audio.c src/ui.c src/fe3d.c src/fe3d_gl.c src/fe3d_vm.c src/video.c src/sprfx.c \
-    -L/c/msys64/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lopengl32 -mwindows -o build-win/fxfighter.exe
-  gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o build-win/fs.exe
-  gcc -O2 -Isrc tests/fecheck.c src/fe3d.c src/assets.c -lm -o build-win/fecheck.exe
-  gcc -O2 -Isrc tests/fevm.c src/fe3d_vm.c src/fe3d.c src/assets.c -lm -o build-win/fevm.exe
-  ```
-  Futtatáshoz a `bin-win64/SDL2.dll`-t a `build-win/` mellé kell másolni. A `FIGHT.PAC` eggyel feljebb van: `../FIGHT.PAC`. Windowson nincs szükség Xvfb-re, a `--screenshot` közvetlenül futtatható.
-- **Szimulátor:** `gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o fs`, majd `./fs <FIGHT.PAC> <p1> <p2> <ticks> <seed>`.
-- **Front end ellenőrzés:** `./fecheck <FIGHT.PAC> [FIGHT.EXE]` (alapból a `FIGHT.PAC` melletti `FIGHT.EXE`); `V=1` a modelltípusokat és a hiányzó textúrákat is kiírja. A 3D front end a bájtkódot futás közben a `FIGHT.EXE`-ből olvassa.
-- **CMake:** a `fxfighter` mellett a `fightsim` és a `fecheck` célt is építi.
-  - Környezeti változók: `V=1` (mozdulatok), `SND=1` (hangok), `FLOOR=1` (talajtávolság), `FORCE_IN=<hex>` és `HOLD=<tick>` (adott bemenet tartása), `NOMESH=1` (modell nélkül), `AI=<0..7>` (nehézség, alapértéke 4). A játékban és a szimulátorban `FX_AITRACE=1` kiírja az AI döntéseit.
-- **Képernyőkép:** `./build/fxfighter <FIGHT.PAC> --p1 4 --p2 6 --ticks 130 --screenshot out.ppm`. Menühöz `--screen title|menu|select|arena|vs|options`, a 3D front endhez `--screen fe3d`. Headless futtatáshoz `xvfb-run -a`.
-- **Gyorstesztelés:** `FX_AUTOTEST=1` (állapotnapló), `FX_AUTOWIN=1` (a 2. játékos ne legyen CPU), `FX_SPEED=8` (gyorsított idő).
-- Parancssori kapcsolók, amelyek kihagyják a menüt: `--p1`, `--p2`, `--arena`, `--2p`, `--demo`, `--fight`, `--viewer`.
+  On Windows `--screenshot` can be run directly, no Xvfb needed. `FIGHT.PAC` is searched in the working directory and one or two levels above it; pass its path as the first argument if it is elsewhere.
+- **Cross-compiling from Linux:** the same `gcc` command with `x86_64-w64-mingw32-gcc` and the MinGW SDL2 (e.g. 2.30.9) as `<SDL2 dir>`.
+- **Simulator:** `gcc -O2 -Isrc tests/fightsim.c src/fight.c src/assets.c -lm -o fs`, then `./fs <FIGHT.PAC> <p1> <p2> <ticks> <seed>`.
+  Environment variables: `V=1` (moves), `SND=1` (sounds), `FLOOR=1` (ground distance), `FORCE_IN=<hex>` and `HOLD=<tick>` (hold a given input), `NOMESH=1` (no model), `AI=<0..7>` (difficulty, default 4). In the game and the simulator `FX_AITRACE=1` prints the AI's decisions.
+- **Front end check:** `./fecheck <FIGHT.PAC> [FIGHT.EXE]` (default: the `FIGHT.EXE` next to `FIGHT.PAC`); `V=1` also prints the model types and missing textures. The 3D front end reads the bytecode from `FIGHT.EXE` at run time.
+- **Screenshot:** `./build/fxfighter <FIGHT.PAC> --p1 4 --p2 6 --ticks 130 --screenshot out.ppm`. For menus use `--screen title|menu|select|arena|vs|options`, for the 3D front end `--screen fe3d`. For headless runs use `xvfb-run -a`.
+- **Quick testing:** `FX_AUTOTEST=1` (state log), `FX_AUTOWIN=1` (player 2 is not a CPU), `FX_SPEED=8` (accelerated time).
+- Command-line options that skip the menu: `--p1`, `--p2`, `--arena`, `--2p`, `--demo`, `--fight`, `--viewer`.
 
-## Fontos technikai tudnivalók
-- Játékfrekvencia: 48 Hz (`FIGHT_HZ`).
-- Harcosmodellek: `fm%d.dat`, a modell lokális −Y irányba néz, Z felfelé.
-- Mozdulattáblák: `moves/f%d.hdr` (36 bájtos rekordok) és `.ste` (12 bájtos állapotgép-lépések). Részletek: `docs/FORMATS.md`.
-- Kamera: `0x4231c0` (képlet; középpont és D a harcmotor követett medence-pozícióiból, `Player.tx/ty`), `0x4a4be8` (előbeállítások), `0x4221b2` (rendező: mozdulatkamera, ring széle). A mozdulat 0x21-es bájtja választja ki az előbeállítást. `FX_CAMTRACE=1` kiírja a ring szélén használt nézet váltásait.
-- Találat: a támadó dobozai összevonva az előző ellenőrzés dobozával (söprés), `0x4491f7`. Az ütközések (találat, taszítás, ringhatár, kiesés) az eredeti szerint mennek, az eredeti hibáival együtt. Részletek: `docs/FORMATS.md`.
-- Ugrás: `FUN_00440f42` képlete, +0,3 alappal.
-- Talajhoz igazítás: a modell legalacsonyabb pontja (`lowest_joint`).
-- Hangbankok: FXL fájlok. A `frontend` bank menüben, a `generic` harcban van.
-- AI: nem gombot nyom, hanem átmenetet választ a mozdulatfejléc 0x19–0x20-as bájtjai alapján. Részletek: `docs/FORMATS.md`.
+## Important technical facts
+- Game frequency: 48 Hz (`FIGHT_HZ`).
+- Fighter models: `fm%d.dat`; the model faces local −Y, Z is up.
+- Move tables: `moves/f%d.hdr` (36-byte records) and `.ste` (12-byte state machine steps). Details: `docs/FORMATS.md`.
+- Camera: `0x4231c0` (formula; center and D from the pelvis positions tracked by the fight engine, `Player.tx/ty`), `0x4a4be8` (presets), `0x4221b2` (director: move camera, ring edge). Byte 0x21 of the move selects the preset. `FX_CAMTRACE=1` prints the view changes used at the ring edge.
+- Hit: the attacker's boxes merged with the boxes of the previous check (sweep), `0x4491f7`. Collisions (hit, push, ring boundary, ring-out) follow the original, including its bugs. Details: `docs/FORMATS.md`.
+- Jump: the formula of `FUN_00440f42`, with +0.3 base.
+- Ground alignment: the model's lowest point (`lowest_joint`).
+- Sound banks: FXL files. The `frontend` bank is used in the menus, `generic` in fights.
+- AI: it does not press buttons but picks a transition based on bytes 0x19–0x20 of the move header. Details: `docs/FORMATS.md`.
 
-## Nyitott feladatok (prioritás szerint)
-1. **AI:** az eredeti AI kész, a `0x424d8f` ringszél-vizsgálattal együtt. A 13-as harcos befejezetlen adat (nincs `fi13.cmp` és `f13.cmp`, a játékban sem választható); a szimulátor ilyenkor hibaüzenettel kilép.
-2. **Jerzan (12. harcos):** az eredetiben félbehagyott tartalom: a létratáblában (`0x496150`) az ő sorai üresek, a `fm12.dat`/`fm12b.dat` testrészei pontnyira zsugorítottak (csak a fej, a kezek és a lábfejek látszanak), az animációja Magnoné (`f12.ani` = `f1.ani`), a mozdulatkészlete saját. A port rejtett harcosként játszhatóvá teszi (bővítés): a pontnyi testrészek Magnon geometriáját kapják Jerzan anyagával (`jerzan_body`), a választóban Magnonon rúgást nyomva tartva ütéssel választható (1P létra, 2P), a létrája Magnoné, a rekordtáblába Magnonként kerül. Teszt: a `match: p1 .. p2 ..` sor (`FX_AUTOTEST`).
-3. **Kábulás (dizzy):** a mechanika kész (kábulásmérő, DAZE mozdulatok, kombó-skálázás, kiszabadulás nyomkodással). Látványeffekt nincs: a `0x4f1a48` (`= 0x17f`, `0x449148`) változót az eredeti csak írja, sehol nem olvassa; a kábulás látható része a DAZE mozdulat (`0x401785(i, 0x68)`), ez a portban is megvan.
-4. **Kamera:** kész a ring szélén használt nézet (`0x4221b2`), a 8 rögzített nézet (`0x421728`) és a rázkódás. A SAT/CAR/SIDE CAM csak halott BRender-adat (`0x4a1e38`), nincs mit portolni. A ringből kiesés kamerája saját.
-5. **Menük (3D front end):** az eredeti menük egy szkript-VM-mel mozgatott BRender 3D jelenet. Felderítés, terv és állapot: `docs/FRONTEND.md` (eszközök: `tools/stratdis.py`, `tools/menutab.py`). Kész az 5. lépés: a 3D menü az alapértelmezés (bemenet, hangok, zene, beállítások, meccsindítás és visszatérés). A 6. lépés is kész: a régi 2D-s menük kikerültek, a menü csak a 3D front end (`FIGHT.EXE` nélkül hibaüzenet; menü nélküli harc: `--p1/--p2/--arena`). A `--screen fe3d` a VM jelenetét rajzolja `FX_FE_TICKS=<n>` tick és `FX_FE_INPUT="30:P1DOWN 75:P1PUNCH 130:P2PUNCH"` után; a szkript a valódi futásban is hat (`FX_AUTOTEST=1 FX_SPEED=10`, kiírja a módokat; ilyenkor az ablak rejtett, nincs teljes képernyő, és mindkét harcos gépi – futtasd `SDL_AUDIODRIVER=dummy`-val és `FX_PREFDIR=<külön mappa>`-val, hogy ne szóljon és ne írja a felhasználó `options.cfg`-jét és `hiscores.dat`-ját; az `APPDATA` átírása ehhez nem elég, mert az SDL a valódi mappát kérdezi le). `FX_FE_ENTRY=<mód> FX_FE_G="59=60000,63=80000"` a képernyőkép-módban egy belépési módot mutat (pl. 1 = torna VS, 2 = rekord-névbeírás `62=50000,61=00000105`-tel, 6 = eredmények). A kihívó becsatlakozása az eredetiben halott kód; a port bővítésként megvalósítja (`challenger`, teszt: `FX_CHALLENGE=<mp>`).
-6. **Folytatás, stáblista, FMV:** a CONTINUE képernyő, a rekordtábla, a videók (`src/video.c`, a CD-ről `tools/rip_video.py`-jal) és a stáblista kész. Tesztben a videók nem futnak (`FX_AUTOTEST`), csak `FX_VIDEOTEST=1`-gyel; `FX_NOVIDEO=1` kikapcsolja őket.
-7. **Színezés:** az eredeti BRender-indexvilágítás CPU-n számolva (`shade_of` / `shade_l` a `src/main.c`-ben; leírás: `docs/FORMATS.md`, „Színezés”). A megvilágított textúrákat két textúrafokozattal közelíti: a `colmap` sorának fényereje, 48 fölött a paletta 137-es színe felé keverés (csillanás, a 60. sorra teljes; `FX_NOHIGHLIGHT=1` kikapcsolja). Az eredeti affin textúrázása nincs meg.
-8. **Háttér és padló:** a háttér helyzete, a padló-részletesség három beállítása és a padló-animáció (`0x428f0a`, 0xa és 0xb aréna) az eredeti szerint kész.
-9. **Sprite-effektek (`.slb`):** kész (`src/sprfx.c`): blokk-szikra és vér a találatnál, a `0xe1` mozdulat-esemény effektjei (töltés, torkolattűz, fúvókák, vízi fröccsenés), teleport a meccs elején (a harcosok és árnyékuk 1,75 mp-ig, a csóva legszélesebb pontjáig láthatatlanok, `0x444ea6` / `0x444f54`). A harcmotor a kéréseket a `Fight.fx` sorba teszi (képkockánként 4), a `main.c` minden tick után indítja és lépteti őket. `FX_SPRTRACE=1` kiírja a kéréseket. A lövedékek (`Sfxproj.c`) halott kód: egyik mozdulattábla sem indítja őket. Nyitott: a 2–4-es fajtájú sprite-ok elforgatása (Euler-szög) csak az eredeti képletéből van, élő összevetés nélkül.
+## Open tasks (by priority)
+1. **AI:** the original AI is done, including the ring-edge check at `0x424d8f`. Fighter 13 is unfinished data (no `fi13.cmp` and `f13.cmp`, cannot be selected in the game); the simulator exits with an error message for it.
+2. **Jerzan (fighter 12):** unfinished content in the original: his rows in the ladder table (`0x496150`) are empty, the body parts of `fm12.dat`/`fm12b.dat` are shrunk to points (only head, hands and feet show), his animation is Magnon's (`f12.ani` = `f1.ani`), his move set is his own. The port makes him playable as a hidden fighter (extension): the point-sized body parts get Magnon's geometry with Jerzan's material (`jerzan_body`); in the select screen he is chosen by holding kick on Magnon and pressing punch (1P ladder, 2P); his ladder is Magnon's, and he is entered in the high-score table as Magnon. Test: the `match: p1 .. p2 ..` line (`FX_AUTOTEST`).
+3. **Dizzy (daze):** the mechanic is done (daze meter, DAZE moves, combo scaling, breaking free by mashing). There is no visual effect: the original only writes the variable `0x4f1a48` (`= 0x17f`, `0x449148`) and never reads it; the visible part of dizziness is the DAZE move (`0x401785(i, 0x68)`), which the port has as well.
+4. **Camera:** the ring-edge view (`0x4221b2`), the 8 fixed views (`0x421728`) and the shake are done. SAT/CAR/SIDE CAM are only dead BRender data (`0x4a1e38`), nothing to port. The ring-out camera is the port's own.
+5. **Menus (3D front end):** the original menus are a BRender 3D scene driven by a script VM. Investigation, plan and status: `docs/FRONTEND.md` (tools: `tools/stratdis.py`, `tools/menutab.py`). Step 5 is done: the 3D menu is the default (input, sounds, music, settings, starting a match and returning). Step 6 is done too: the old 2D menus are gone, the menu is only the 3D front end (without `FIGHT.EXE` an error message; fight without menus: `--p1/--p2/--arena`). `--screen fe3d` draws the VM's scene after `FX_FE_TICKS=<n>` ticks and `FX_FE_INPUT="30:P1DOWN 75:P1PUNCH 130:P2PUNCH"`; the script also takes effect in a real run (`FX_AUTOTEST=1 FX_SPEED=10` prints the modes; the window is then hidden, there is no fullscreen, and both fighters are computer-controlled – run it with `SDL_AUDIODRIVER=dummy` and `FX_PREFDIR=<separate folder>` so that it makes no sound and does not write the user's `options.cfg` and `hiscores.dat`; changing `APPDATA` is not enough because SDL queries the real folder). `FX_FE_ENTRY=<mode> FX_FE_G="59=60000,63=80000"` shows an entry mode in screenshot mode (e.g. 1 = tournament VS, 2 = high-score name entry with `62=50000,61=00000105`, 6 = results). The challenger joining is dead code in the original; the port implements it as an extension (`challenger`, test: `FX_CHALLENGE=<s>`).
+6. **Continue, credits, FMV:** the CONTINUE screen, the high-score table, the videos (`src/video.c`, from the CD with `tools/rip_video.py`) and the credits are done. Videos do not run in tests (`FX_AUTOTEST`), only with `FX_VIDEOTEST=1`; `FX_NOVIDEO=1` turns them off.
+7. **Shading:** the original BRender index lighting computed on the CPU (`shade_of` / `shade_l` in `src/main.c`; description: `docs/FORMATS.md`, "Shading"). Lit textures are approximated with two texture levels: the brightness of the `colmap` row, and above 48 a blend toward palette color 137 (highlight, full at row 60; `FX_NOHIGHLIGHT=1` turns it off). The original's affine texturing is not implemented.
+8. **Background and floor:** the background position, the three floor detail settings and the floor animation (`0x428f0a`, arenas 0xa and 0xb) are done as in the original.
+9. **Sprite effects (`.slb`):** done (`src/sprfx.c`): block sparks and blood on a hit, the effects of move event `0xe1` (charging, muzzle flash, nozzles, water splash), the teleport at the start of a match (the fighters and their shadows are invisible for 1.75 s, until the beam is at its widest, `0x444ea6` / `0x444f54`). The fight engine queues the requests in `Fight.fx` (4 per frame); `main.c` starts and steps them after every tick. `FX_SPRTRACE=1` prints the requests. The projectiles (`Sfxproj.c`) are dead code: no move table starts them. Open: the rotation (Euler angles) of sprite kinds 2–4 comes only from the original's formula, with no live comparison.
 
-## Eldöntött kérdések (a felhasználóval)
-- Hálózati játék nem lesz a portban (szándékosan kimarad).
-- Az ugrás közben tiltott ringből való kiesés saját döntés, nem az eredetiből származik; így marad.
-- Az ugrás végén a földet érés után a harcos egy lépésben kerül a padlóra (`land_snap`, mint az eredeti `cb4e0` igazítása),
-  így a JUMP LAND 3 eleji medence-ugrás megszűnt; a maradék kis eltérés az animációk pózkülönbsége.
+## Decided questions (with the user)
+- There will be no network play in the port (deliberately left out).
+- Ring-out is forbidden during a jump by the port's own decision, not from the original; it stays that way.
+- At the end of a jump the fighter lands on the floor in one step (`land_snap`, like the original's `cb4e0` alignment), which removed the pelvis jump at the start of JUMP LAND 3; the small remaining difference is the pose difference of the animations.
 
-## Munkamód
-- Kis lépésekben haladunk. Minden változtatás után buildelünk, screenshotot vagy szimulációs logot nézünk, és frissítjük a dokumentációt.
-- Kiadás előtt a Linuxos és a Windowsos buildet is ellenőrizzük.
-- A felhasználó visszajelzései alapján haladunk a következő mérföldkőre, a `docs/ROADMAP.md` szerint.
-- A felhasználóval magyarul beszélünk, a kódkommentek és a dokumentáció is magyar.
+## Publishing
+The public repository history is English: commit messages are in English, and so are the documentation and code comments. Do not commit original game content (`FIGHT.PAC`, `FIGHT.EXE`, `fight_decomp.c`, MP3 or video files) or binaries.
+
+## Working mode
+- Work in small steps. After every change, build, look at a screenshot or a simulation log, and update the documentation.
+- Check both the Linux and the Windows build before a release.
+- Move on to the next milestone based on the user's feedback, following `docs/ROADMAP.md`.
+- Documentation, code comments, commit messages and the repo are in English.
