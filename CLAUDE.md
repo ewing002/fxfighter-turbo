@@ -55,7 +55,7 @@ The address table used for searching the EXE is at the bottom of `docs/ROADMAP.m
 - **Front end check:** `./fecheck <FIGHT.PAC> [FIGHT.EXE]` (default: the `FIGHT.EXE` next to `FIGHT.PAC`); `V=1` also prints the model types and missing textures. The 3D front end reads the bytecode from `FIGHT.EXE` at run time.
 - **Screenshot:** `./build/fxfighter <FIGHT.PAC> --p1 4 --p2 6 --ticks 130 --screenshot out.ppm`. For menus use `--screen title|menu|select|arena|vs|options`, for the 3D front end `--screen fe3d`. For headless runs use `xvfb-run -a`.
 - **Quick testing:** `FX_AUTOTEST=1` (state log), `FX_AUTOWIN=1` (player 2 is not a CPU), `FX_SPEED=8` (accelerated time).
-- Command-line options that skip the menu: `--p1`, `--p2`, `--arena`, `--2p`, `--demo`, `--fight`, `--viewer`.
+- Command-line options that skip the menu: `--p1`, `--p2`, `--arena`, `--2p`, `--demo`, `--fight`, `--viewer`. `--size WxH` sets the window size (works with `--screenshot` too). Resolution: `window_w/h`, `fullscreen_w/h` in `options.cfg`, F9 / Shift+F9 cycle it (`res_cycle`, `res_apply` in `src/main.c`).
 
 ## Important technical facts
 - Game frequency: 48 Hz (`FIGHT_HZ`).

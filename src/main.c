@@ -103,14 +103,15 @@ static double g_ladder_time;                    /* 1P ladder: fight time so far 
 static int  g_bank0_front;                      /* sound bank 0 holds frontend.fxl (menus) */
 
 /* ---- options (saved in the user's preferences folder) ---- */
-typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7], quick_cont, challenger; } Config;
-static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 }, 0, 1 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
+typedef struct { int fullscreen, vsync, music, sfx, rounds, round_secs, ringouts, rumble, difficulty, hc[2], speed, ring_guard, input_buffer, det[7], quick_cont, challenger, win_w, win_h, fs_w, fs_h; } Config;
+static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1, 1, 2, 2, 1 }, 0, 1, 1280, 960, 0, 0 };   /* difficulty: CPU level 0..7 (0x4a587c); hc: handicap
                                                                  * 0..7 (0x4a5878, shown 1..8; the original's default is 2) */
 /* game speed 1..3 (0x4a5899): PIT ticks per fight frame from 0x4a1cf0 (24850, 19880, 17890),
  * i.e. 48, 60 and 66.7 Hz */
 static int speed_pit(int sp) { return sp >= 3 ? 17890 : sp == 2 ? 19880 : 24850; }
 static double tick_secs(void) { return (double)speed_pit(g_cfg.speed) / 1193182.0; }
 static SDL_Window *g_win;
+static int g_cfg_dirty;                         /* the window was resized by hand: save at the next cfg_save / exit */
 static int  g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
 static int  g_pad_dir[2][2];                    /* last stick direction per pad (menu navigation) */
@@ -1234,6 +1235,10 @@ static void cfg_load(void)
         else if (!strcmp(k, "ring_guard")) g_cfg.ring_guard = v != 0;
         else if (!strcmp(k, "quick_continue")) g_cfg.quick_cont = v != 0;
         else if (!strcmp(k, "challenger")) g_cfg.challenger = v != 0;
+        else if (!strcmp(k, "window_w")) g_cfg.win_w = v < 320 ? 320 : v > 16384 ? 16384 : v;
+        else if (!strcmp(k, "window_h")) g_cfg.win_h = v < 240 ? 240 : v > 16384 ? 16384 : v;
+        else if (!strcmp(k, "fullscreen_w")) g_cfg.fs_w = v < 0 ? 0 : v > 16384 ? 16384 : v;
+        else if (!strcmp(k, "fullscreen_h")) g_cfg.fs_h = v < 0 ? 0 : v > 16384 ? 16384 : v;
         else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
         else if (!strncmp(k, "detail", 6) && k[6] >= '1' && k[6] <= '7' && !k[7]) g_cfg.det[k[6] - '1'] = v < 0 ? 0 : v > 2 ? 2 : v;
         else if (!strcmp(k, "handicap1") || !strcmp(k, "handicap2"))
@@ -1258,16 +1263,120 @@ static void cfg_save(void)
     for (int i = 0; i < 7; i++) fprintf(f, "detail%d=%d\n", i + 1, g_cfg.det[i]);
     fprintf(f, "quick_continue=%d\n", g_cfg.quick_cont);
     fprintf(f, "challenger=%d\n", g_cfg.challenger);
+    fprintf(f, "window_w=%d\nwindow_h=%d\nfullscreen_w=%d\nfullscreen_h=%d\n", g_cfg.win_w, g_cfg.win_h, g_cfg.fs_w, g_cfg.fs_h);
     for (int i = 0; i < 12; i++) fprintf(f, "key%d=%d\n", i + 1, g_keys[i]);
     fclose(f);
+    g_cfg_dirty = 0;
+}
+
+/* ---- resolution: window size (windowed) and display mode (fullscreen) ----
+ * options.cfg: window_w/window_h = size of the window, fullscreen_w/fullscreen_h = fullscreen resolution
+ * (0 x 0 = borderless fullscreen at the desktop resolution). F9 / Shift+F9 cycle the resolution of the current
+ * mode (window size or fullscreen resolution); dragging the window edge is saved too; --size WxH sets the window size. */
+static int g_fs_applied_w, g_fs_applied_h;
+
+static int res_display(void) { int d = g_win ? SDL_GetWindowDisplayIndex(g_win) : 0; return d < 0 ? 0 : d; }
+
+static void res_apply(void)
+{
+    if (!g_win || getenv("FX_AUTOTEST")) return;
+    Uint32 cur = SDL_GetWindowFlags(g_win) & SDL_WINDOW_FULLSCREEN_DESKTOP;     /* 0, FULLSCREEN or FULLSCREEN_DESKTOP */
+    int exclusive = g_cfg.fullscreen && g_cfg.fs_w > 0 && g_cfg.fs_h > 0;
+    if (g_cfg.fullscreen) {
+        if (exclusive) {
+            SDL_DisplayMode want = { 0, g_cfg.fs_w, g_cfg.fs_h, 0, NULL }, closest;
+            if (SDL_GetClosestDisplayMode(res_display(), &want, &closest)) {
+                if (cur && (g_fs_applied_w != g_cfg.fs_w || g_fs_applied_h != g_cfg.fs_h)) {
+                    SDL_SetWindowFullscreen(g_win, 0);              /* leave first so that the new mode is really set */
+                    cur = 0;
+                }
+                SDL_SetWindowDisplayMode(g_win, &closest);
+            } else exclusive = 0;
+        }
+        Uint32 want_fs = exclusive ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_FULLSCREEN_DESKTOP;
+        if (cur != want_fs) SDL_SetWindowFullscreen(g_win, want_fs);
+        g_fs_applied_w = exclusive ? g_cfg.fs_w : 0; g_fs_applied_h = exclusive ? g_cfg.fs_h : 0;
+    } else {
+        if (cur) SDL_SetWindowFullscreen(g_win, 0);
+        int w, h; SDL_GetWindowSize(g_win, &w, &h);
+        if (w != g_cfg.win_w || h != g_cfg.win_h) {
+            if (SDL_GetWindowFlags(g_win) & SDL_WINDOW_MAXIMIZED) SDL_RestoreWindow(g_win);
+            SDL_SetWindowSize(g_win, g_cfg.win_w, g_cfg.win_h);
+            SDL_SetWindowPosition(g_win, SDL_WINDOWPOS_CENTERED_DISPLAY(res_display()), SDL_WINDOWPOS_CENTERED_DISPLAY(res_display()));
+        }
+    }
+}
+
+static const int k_win_sizes[][2] = { { 640, 480 }, { 800, 600 }, { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 960 },
+    { 1600, 900 }, { 1600, 1200 }, { 1920, 1080 }, { 1920, 1440 }, { 2560, 1440 }, { 3840, 2160 } };
+
+/* the list for the current mode: the window sizes that fit the screen, or [desktop] + the display modes */
+static int res_list(int fullscreen, int out[][2], int max)
+{
+    int n = 0;
+    if (fullscreen) {
+        out[n][0] = 0; out[n][1] = 0; n++;                          /* desktop (borderless) */
+        int di = res_display(), nm = SDL_GetNumDisplayModes(di);
+        for (int i = 0; i < nm && n < max; i++) {
+            SDL_DisplayMode m;
+            if (SDL_GetDisplayMode(di, i, &m) != 0 || m.w < 640 || m.h < 480) continue;
+            int dup = 0;
+            for (int j = 1; j < n; j++) if (out[j][0] == m.w && out[j][1] == m.h) dup = 1;
+            if (!dup) { out[n][0] = m.w; out[n][1] = m.h; n++; }
+        }
+        for (int i = 1; i < n; i++)                                 /* ascending by pixel count */
+            for (int j = i + 1; j < n; j++)
+                if ((long)out[j][0] * out[j][1] < (long)out[i][0] * out[i][1]) {
+                    int a = out[i][0], b = out[i][1];
+                    out[i][0] = out[j][0]; out[i][1] = out[j][1]; out[j][0] = a; out[j][1] = b;
+                }
+    } else {
+        SDL_Rect r;
+        int have = SDL_GetDisplayUsableBounds(res_display(), &r) == 0;
+        for (size_t i = 0; i < sizeof k_win_sizes / sizeof k_win_sizes[0] && n < max; i++) {
+            if (have && (k_win_sizes[i][0] > r.w || k_win_sizes[i][1] > r.h)) continue;
+            out[n][0] = k_win_sizes[i][0]; out[n][1] = k_win_sizes[i][1]; n++;
+        }
+        if (!n) { out[0][0] = 640; out[0][1] = 480; n = 1; }
+    }
+    return n;
+}
+
+static void cfg_save(void);
+static void cfg_apply(void);
+
+static void res_cycle(int dir)
+{
+    int list[64][2], n = res_list(g_cfg.fullscreen, list, 64);
+    int cw = g_cfg.fullscreen ? g_cfg.fs_w : g_cfg.win_w, ch = g_cfg.fullscreen ? g_cfg.fs_h : g_cfg.win_h;
+    long ca = (long)cw * ch;
+    int pick;
+    if (g_cfg.fullscreen) {                                          /* an exact list: step by index */
+        int idx = 0;
+        for (int i = 0; i < n; i++) if (list[i][0] == cw && list[i][1] == ch) idx = i;
+        pick = ((idx + dir) % n + n) % n;
+    } else if (dir > 0) {                                            /* the next larger size, wrapping to the smallest */
+        pick = 0;
+        for (int i = 0; i < n; i++) if ((long)list[i][0] * list[i][1] > ca) { pick = i; break; }
+    } else {
+        pick = n - 1;
+        for (int i = n - 1; i >= 0; i--) if ((long)list[i][0] * list[i][1] < ca) { pick = i; break; }
+    }
+    if (g_cfg.fullscreen) { g_cfg.fs_w = list[pick][0]; g_cfg.fs_h = list[pick][1]; }
+    else { g_cfg.win_w = list[pick][0]; g_cfg.win_h = list[pick][1]; }
+    cfg_apply();
+    cfg_save();
+    char t[128];
+    if (g_cfg.fullscreen && !g_cfg.fs_w) snprintf(t, sizeof t, "FX Fighter Turbo | fullscreen: desktop resolution");
+    else snprintf(t, sizeof t, "FX Fighter Turbo | %s: %d x %d", g_cfg.fullscreen ? "fullscreen" : "window",
+                  g_cfg.fullscreen ? g_cfg.fs_w : g_cfg.win_w, g_cfg.fullscreen ? g_cfg.fs_h : g_cfg.win_h);
+    printf("%s\n", t); fflush(stdout);
+    if (g_win) SDL_SetWindowTitle(g_win, t);
 }
 
 static void cfg_apply(void)
 {
-    if (g_win) {
-        int fs = (SDL_GetWindowFlags(g_win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
-        if (fs != g_cfg.fullscreen && !getenv("FX_AUTOTEST")) SDL_SetWindowFullscreen(g_win, g_cfg.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    }
+    res_apply();
     SDL_GL_SetSwapInterval(g_cfg.vsync ? 1 : 0);
     music_set_volume((float)g_cfg.music / 10.0f);
     sfx_set_volume((float)g_cfg.sfx / 10.0f);
@@ -2670,14 +2779,26 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
+    /* window size: options.cfg (window_w / window_h), overridden by --size WxH */
+    {
+        int is_shot = 0;
+        for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--screenshot")) is_shot = 1;
+        if (!getenv("FX_AUTOTEST") && (!is_shot || getenv("FX_PREFDIR"))) cfg_load();
+        for (int i = 1; i + 1 < argc; i++) {
+            int w, h;
+            if (!strcmp(argv[i], "--size") && sscanf(argv[i + 1], "%dx%d", &w, &h) == 2 && w >= 320 && h >= 240 && w <= 16384 && h <= 16384) {
+                g_cfg.win_w = w; g_cfg.win_h = h;
+            }
+        }
+    }
     SDL_Window *win = SDL_CreateWindow("FX Fighter Turbo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
+                                       g_cfg.win_w, g_cfg.win_h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
                                        (getenv("FX_AUTOTEST") ? SDL_WINDOW_HIDDEN : 0));   /* tests: no window on the screen */
     if (!win) {
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
         SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
         win = SDL_CreateWindow("FX Fighter Turbo", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                               1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (getenv("FX_AUTOTEST") ? SDL_WINDOW_HIDDEN : 0));
+                               g_cfg.win_w, g_cfg.win_h, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | (getenv("FX_AUTOTEST") ? SDL_WINDOW_HIDDEN : 0));
     }
     if (!win) { fprintf(stderr, "window: %s\n", SDL_GetError()); return 1; }
     g_win = win;
@@ -2709,6 +2830,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--2p")) { two_players = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--demo")) { demo = 1; g_debug_fight = 1; }
         else if (!strcmp(argv[i], "--fight")) g_debug_fight = 1;
+        else if (!strcmp(argv[i], "--size") && i + 1 < argc) i++;       /* handled before the window is created */
         else if (!strcmp(argv[i], "--screen") && i + 1 < argc) { if (!strcmp(argv[++i], "fe3d")) screen = 1; }
     }
     md = pac_get(&g_pac, "fight/fighters/shadow0.dat", &sz);
@@ -2781,6 +2903,13 @@ int main(int argc, char **argv)
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
+            else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
+                Uint32 wf = SDL_GetWindowFlags(win);       /* remember a window size set by dragging the edge */
+                if (!(wf & (SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED)) && e.window.data1 > 0 && e.window.data2 > 0 &&
+                    (e.window.data1 != g_cfg.win_w || e.window.data2 != g_cfg.win_h)) {
+                    g_cfg.win_w = e.window.data1; g_cfg.win_h = e.window.data2; g_cfg_dirty = 1;
+                }
+            }
             else if (e.type == SDL_CONTROLLERDEVICEADDED) pad_added(e.cdevice.which);
             else if (e.type == SDL_CONTROLLERDEVICEREMOVED) pad_removed(e.cdevice.which);
             else if (e.type == SDL_CONTROLLERBUTTONDOWN) { int s = pad_slot(e.cbutton.which); if (s >= 0) pad_button(s, e.cbutton.button); }
@@ -2818,6 +2947,7 @@ int main(int argc, char **argv)
                 if (k == SDLK_m) music_toggle();
                 else if (k == SDLK_MINUS || k == SDLK_KP_MINUS) { if (g_cfg.music > 0) g_cfg.music--; cfg_apply(); cfg_save(); }
                 else if (k == SDLK_EQUALS || k == SDLK_PLUS || k == SDLK_KP_PLUS) { if (g_cfg.music < 10) g_cfg.music++; cfg_apply(); cfg_save(); }
+                else if (k == SDLK_F9) res_cycle((SDL_GetModState() & KMOD_SHIFT) ? -1 : 1);
                 else if (k == SDLK_F11 || (k == SDLK_RETURN && (SDL_GetModState() & KMOD_ALT))) {
                     g_cfg.fullscreen = !g_cfg.fullscreen; cfg_apply(); cfg_save();
                 }
@@ -2918,6 +3048,7 @@ int main(int argc, char **argv)
         SDL_GL_SwapWindow(win);
         if (!g_cfg.vsync) SDL_Delay(1);
     }
+    if (g_cfg_dirty) cfg_save();
     for (int i = 0; i < 2; i++) if (g_pad[i]) SDL_GameControllerClose(g_pad[i]);
     audio_shutdown();
     fighter_free(&g_f[0]); fighter_free(&g_f[1]); arena_free(&g_arena);

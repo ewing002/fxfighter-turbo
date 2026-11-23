@@ -113,6 +113,11 @@ In the menus: d-pad or left stick = move, A / X / Start = select, Y = kick, B / 
 **Settings:** round time, number of rounds, difficulty, game speed (48 / 60 / 66.7 frames/s; the round clock runs in real time), handicap,
 volumes and keys are set in the OPTIONS part of the 3D menu.
 Everything else is only in `options.cfg`:
+- **Resolution:** `window_w` / `window_h` (size of the window, default 1280 x 960) and `fullscreen_w` / `fullscreen_h` (fullscreen resolution;
+  `0` / `0` = borderless fullscreen at the desktop resolution, the default; any other pair switches the display to the closest supported mode).
+  **F9** steps to the next resolution of the current mode (window sizes that fit the screen when windowed, the display's modes when in fullscreen),
+  **Shift+F9** to the previous one; the new value is saved at once and shown in the window title and the console. A window size set by dragging the
+  window edge is saved as well. `--size WxH` on the command line overrides the window size for one run.
 - `fullscreen` (0/1; also F11 or Alt+Enter), `vsync`, `ringouts` (ring-out), `rumble` (controller vibration),
   `round_time=99` (a round time that the original does not have).
 - `ring_guard` (default 1): a human player cannot step out of the ring by his own movement (step, attack, jump); only a punch, push or throw can
@@ -151,7 +156,7 @@ For testing, the command-line fight (`--p1 N --p2 N`) has the older hotkeys:
 **Viewer mode (F1)**: ← / → animation, ↑ / ↓ and PgUp / PgDn fighter, Space pause, , / . single step.
 
 **Command-line options:** `--arena N --p1 N --p2 N --2p --demo --viewer --fight` (these skip the menu and start an endless match),
-and `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
+`--size WxH` (window size, also for `--screenshot`), and `--clip N --time S --yaw R --ticks N --screenshot out.ppm --screen fe3d`.
 
 ## Videos
 The original videos (intro, logos, the end-of-ladder and game-over scenes, the credits clips) are on the CD. `tools/rip_video.py` copies them
