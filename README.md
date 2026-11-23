@@ -122,8 +122,10 @@ In the menus: d-pad or left stick = move, A / X / Start = select, Y = kick, B / 
 **Settings:** round time, number of rounds, difficulty, game speed (48 / 60 / 66.7 frames/s; the round clock runs in real time), handicap,
 volumes and keys are set in the OPTIONS part of the 3D menu.
 Everything else is only in `options.cfg`:
-- **Resolution:** `window_w` / `window_h` (size of the window, default 1280 x 960) and `fullscreen_w` / `fullscreen_h` (fullscreen resolution;
-  `0` / `0` = borderless fullscreen at the desktop resolution, the default; any other pair switches the display to the closest supported mode).
+- **Resolution:** `window_w` / `window_h` (size of the window, default 1280 x 960, down to 320 x 200) and `fullscreen_w` / `fullscreen_h`
+  (fullscreen resolution; `0` / `0` = borderless fullscreen at the desktop resolution, the default). A resolution the display supports switches
+  the display to it; a lower one it does not have (320 x 200, 320 x 240, 400 x 300, 512 x 384, 640 x 400, 640 x 480) is drawn at that size and
+  scaled up to the screen with sharp pixels, keeping its shape (black bars at the sides).
   **F9** steps to the next resolution of the current mode (window sizes that fit the screen when windowed, the display's modes when in fullscreen),
   **Shift+F9** to the previous one; the new value is saved at once and shown in the window title and the console. A window size set by dragging the
   window edge is saved as well. `--size WxH` on the command line overrides the window size for one run.

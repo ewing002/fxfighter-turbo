@@ -157,6 +157,9 @@ static int  g_nctl[NPAGES];
 static int  g_page;
 static int  g_capture = -1;                /* key button waiting for a key press */
 static int  g_dpi = 96;
+static HANDLE g_game_proc;                 /* the started game, while the launcher hands over the foreground */
+static DWORD  g_game_pid;
+static int    g_game_wait;
 static HBRUSH g_bg_brush;                  /* the colour of the tab page, used for the whole window so that labels blend in */
 static COLORREF g_bg_color;
 
@@ -204,7 +207,7 @@ static int cb_data(int id, int def)
 static void set_check(int id, int v) { SendMessageW(C(id), BM_SETCHECK, v ? BST_CHECKED : BST_UNCHECKED, 0); }
 static int  get_check(int id) { return SendMessageW(C(id), BM_GETCHECK, 0, 0) == BST_CHECKED; }
 
-static const int WIN_SIZES[][2] = { { 640, 480 }, { 800, 600 }, { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 960 },
+static const int WIN_SIZES[][2] = { { 320, 200 }, { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 400 }, { 640, 480 }, { 800, 600 }, { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 960 },
     { 1600, 900 }, { 1600, 1200 }, { 1920, 1080 }, { 1920, 1440 }, { 2560, 1440 }, { 3440, 1440 }, { 3840, 2160 } };
 
 static void add_res(int id, int w, int h)
@@ -219,7 +222,7 @@ static int list_modes(int out[][2], int max)
     int n = 0;
     DEVMODEW dm; memset(&dm, 0, sizeof dm); dm.dmSize = sizeof dm;
     for (int i = 0; EnumDisplaySettingsW(NULL, i, &dm) && n < max; i++) {
-        if ((int)dm.dmPelsWidth < 640 || (int)dm.dmPelsHeight < 480) continue;
+        if ((int)dm.dmPelsWidth < 320 || (int)dm.dmPelsHeight < 200) continue;
         int dup = 0;
         for (int j = 0; j < n; j++) if (out[j][0] == (int)dm.dmPelsWidth && out[j][1] == (int)dm.dmPelsHeight) dup = 1;
         if (!dup) { out[n][0] = (int)dm.dmPelsWidth; out[n][1] = (int)dm.dmPelsHeight; n++; }
@@ -357,8 +360,42 @@ static void do_play(void)
         MessageBoxW(g_wnd, L"The game could not be started.", L"FX Fighter Turbo", MB_ICONERROR);
         return;
     }
-    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-    PostQuitMessage(0);
+    CloseHandle(pi.hThread);
+    AllowSetForegroundWindow(pi.dwProcessId);
+    /* stay in front until the game's window is there, then hand the foreground over to it and quit
+     * (a program that is not in the foreground may not bring another window to the front) */
+    g_game_proc = pi.hProcess; g_game_pid = pi.dwProcessId; g_game_wait = 0;
+    EnableWindow(C(ID_PLAY), FALSE);
+    SetWindowTextW(C(ID_STATUS), L"Starting the game ...");
+    SetTimer(g_wnd, 1, 100, NULL);
+}
+
+static BOOL CALLBACK find_game_window(HWND h, LPARAM l)
+{
+    DWORD pid = 0; GetWindowThreadProcessId(h, &pid);
+    if (pid == g_game_pid && IsWindowVisible(h) && !GetWindow(h, GW_OWNER)) { *(HWND *)l = h; return FALSE; }
+    return TRUE;
+}
+
+static void game_wait_tick(void)
+{
+    HWND gw = NULL;
+    EnumWindows(find_game_window, (LPARAM)&gw);
+    int done = WaitForSingleObject(g_game_proc, 0) == WAIT_OBJECT_0;
+    if (gw) {
+        /* make the hand-over reliable: attach to the game's input queue for the call */
+        DWORD me = GetCurrentThreadId(), it = GetWindowThreadProcessId(gw, NULL);
+        AttachThreadInput(me, it, TRUE);
+        ShowWindow(gw, SW_SHOW);
+        SetForegroundWindow(gw);
+        BringWindowToTop(gw);
+        AttachThreadInput(me, it, FALSE);
+    }
+    if (gw || done || ++g_game_wait > 300) {         /* found, the game ended, or 30 s passed */
+        KillTimer(g_wnd, 1);
+        CloseHandle(g_game_proc); g_game_proc = NULL;
+        DestroyWindow(g_wnd);
+    }
 }
 
 static void do_browse(void)
@@ -471,6 +508,13 @@ static void fill_lists(void)
     for (size_t i = 0; i < sizeof WIN_SIZES / sizeof WIN_SIZES[0]; i++) add_res(ID_WINSIZE, WIN_SIZES[i][0], WIN_SIZES[i][1]);
     cb_add(ID_FSRES, L"Desktop resolution (borderless)", 0);
     int modes[96][2], n = list_modes(modes, 96);
+    /* low resolutions the display has no mode for: the game draws at that size and scales it up (sharp pixels) */
+    static const int LOW[][2] = { { 320, 200 }, { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 400 }, { 640, 480 } };
+    for (size_t k = 0; k < sizeof LOW / sizeof LOW[0]; k++) {
+        int real = 0;
+        for (int i = 0; i < n; i++) if (modes[i][0] == LOW[k][0] && modes[i][1] == LOW[k][1]) real = 1;
+        if (!real) { wchar_t t[64]; swprintf(t, 64, L"%d x %d (scaled)", LOW[k][0], LOW[k][1]); cb_add(ID_FSRES, t, (LOW[k][0] << 16) | LOW[k][1]); }
+    }
     for (int i = 0; i < n; i++) add_res(ID_FSRES, modes[i][0], modes[i][1]);
     cb_add(ID_ROUNDS, L"1", 1); cb_add(ID_ROUNDS, L"3 (best of 3)", 3); cb_add(ID_ROUNDS, L"5 (best of 5)", 5);
     cb_add(ID_ROUNDTIME, L"30 seconds", 30); cb_add(ID_ROUNDTIME, L"60 seconds", 60); cb_add(ID_ROUNDTIME, L"90 seconds", 90);
@@ -548,6 +592,7 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         }
         return 0;
     }
+    case WM_TIMER: if (w == 1 && g_game_proc) game_wait_tick(); return 0;
     case WM_CLOSE: DestroyWindow(h); return 0;
     case WM_DESTROY: PostQuitMessage(0); return 0;
     }

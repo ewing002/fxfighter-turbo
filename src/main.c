@@ -111,6 +111,7 @@ static Config g_cfg = { 0, 1, 6, 9, 3, 60, 1, 1, 4, { 3, 3 }, 1, 1, 4, { 1, 1, 1
 static int speed_pit(int sp) { return sp >= 3 ? 17890 : sp == 2 ? 19880 : 24850; }
 static double tick_secs(void) { return (double)speed_pit(g_cfg.speed) / 1193182.0; }
 static SDL_Window *g_win;
+static int g_lowres_w, g_lowres_h;              /* fullscreen resolution the display has no mode for: render at this size and scale up */
 static int g_cfg_dirty;                         /* the window was resized by hand: save at the next cfg_save / exit */
 static int  g_fight_paused;
 static SDL_GameController *g_pad[2];            /* game controller of player 1 / 2 */
@@ -859,6 +860,98 @@ static FeVm     g_vm;
 static FeScene  g_fesc;
 static float    g_fe_alpha = 1;     /* drawing position between the last two VM ticks */
 
+static void render(int w, int h);
+
+/* ---- low-resolution rendering: an off-screen framebuffer (GL 3.0 / ARB_framebuffer_object) drawn as one
+ * textured quad with nearest filtering, letterboxed to keep the shape of the chosen resolution ---- */
+typedef void (APIENTRY *GenFbFn)(GLsizei, GLuint *);
+typedef void (APIENTRY *BindFbFn)(GLenum, GLuint);
+typedef void (APIENTRY *FbTexFn)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef void (APIENTRY *RbStorageFn)(GLenum, GLenum, GLsizei, GLsizei);
+typedef void (APIENTRY *FbRbFn)(GLenum, GLenum, GLenum, GLuint);
+typedef GLenum (APIENTRY *FbStatusFn)(GLenum);
+static struct {
+    int tried, ok, w, h;
+    GLuint fb, tex, depth;
+    GenFbFn gen_fb, gen_rb; BindFbFn bind_fb, bind_rb; FbTexFn fb_tex; RbStorageFn rb_storage; FbRbFn fb_rb; FbStatusFn status;
+} g_lr;
+
+static int lowres_prepare(int w, int h)
+{
+    if (!g_lr.tried) {
+        g_lr.tried = 1;
+        g_lr.gen_fb = (GenFbFn)SDL_GL_GetProcAddress("glGenFramebuffers");
+        g_lr.bind_fb = (BindFbFn)SDL_GL_GetProcAddress("glBindFramebuffer");
+        g_lr.fb_tex = (FbTexFn)SDL_GL_GetProcAddress("glFramebufferTexture2D");
+        g_lr.gen_rb = (GenFbFn)SDL_GL_GetProcAddress("glGenRenderbuffers");
+        g_lr.bind_rb = (BindFbFn)SDL_GL_GetProcAddress("glBindRenderbuffer");
+        g_lr.rb_storage = (RbStorageFn)SDL_GL_GetProcAddress("glRenderbufferStorage");
+        g_lr.fb_rb = (FbRbFn)SDL_GL_GetProcAddress("glFramebufferRenderbuffer");
+        g_lr.status = (FbStatusFn)SDL_GL_GetProcAddress("glCheckFramebufferStatus");
+        g_lr.ok = g_lr.gen_fb && g_lr.bind_fb && g_lr.fb_tex && g_lr.gen_rb && g_lr.bind_rb && g_lr.rb_storage && g_lr.fb_rb && g_lr.status;
+        if (g_lr.ok) { g_lr.gen_fb(1, &g_lr.fb); glGenTextures(1, &g_lr.tex); g_lr.gen_rb(1, &g_lr.depth); }
+        else printf("low resolution: framebuffer objects are not available, drawing at the full size\n");
+    }
+    if (!g_lr.ok) return 0;
+    if (g_lr.w != w || g_lr.h != h) {
+        GLint old; glGetIntegerv(GL_TEXTURE_BINDING_2D, &old);
+        glBindTexture(GL_TEXTURE_2D, g_lr.tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)old);
+        g_lr.bind_rb(0x8D41 /* GL_RENDERBUFFER */, g_lr.depth);
+        g_lr.rb_storage(0x8D41, GL_DEPTH_COMPONENT24, w, h);
+        g_lr.bind_fb(0x8D40 /* GL_FRAMEBUFFER */, g_lr.fb);
+        g_lr.fb_tex(0x8D40, 0x8CE0 /* GL_COLOR_ATTACHMENT0 */, GL_TEXTURE_2D, g_lr.tex, 0);
+        g_lr.fb_rb(0x8D40, 0x8D00 /* GL_DEPTH_ATTACHMENT */, 0x8D41, g_lr.depth);
+        GLenum st = g_lr.status(0x8D40);
+        g_lr.bind_fb(0x8D40, 0);
+        if (st != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) { printf("low resolution: framebuffer incomplete (0x%x)\n", st); g_lr.ok = 0; return 0; }
+        g_lr.w = w; g_lr.h = h;
+    }
+    return 1;
+}
+
+/* draws a frame at the window size, or at the low fullscreen resolution scaled up */
+static void render_frame(int w, int h)
+{
+    int rw = g_lowres_w, rh = g_lowres_h;
+    if (!rw || !rh || rw >= w || rh >= h || !lowres_prepare(rw, rh)) { render(w, h); return; }
+    g_lr.bind_fb(0x8D40, g_lr.fb);
+    render(rw, rh);
+    g_lr.bind_fb(0x8D40, 0);
+    float s = (float)w / rw < (float)h / rh ? (float)w / rw : (float)h / rh;     /* fit, same shape */
+    int dw = (int)(rw * s), dh = (int)(rh * s), dx = (w - dw) / 2, dy = (h - dh) / 2;
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    if (g_active_tex) g_active_tex(GL_TEXTURE0);
+    glViewport(0, 0, w, h);
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glViewport(dx, dy, dw, dh);
+    glDisable(GL_DEPTH_TEST); glDisable(GL_LIGHTING); glDisable(GL_BLEND); glDisable(GL_ALPHA_TEST);
+    glDisable(GL_CULL_FACE); glDisable(GL_FOG);
+    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glBindTexture(GL_TEXTURE_2D, g_lr.tex);
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(-1, -1);
+    glTexCoord2f(1, 0); glVertex2f(1, -1);
+    glTexCoord2f(1, 1); glVertex2f(1, 1);
+    glTexCoord2f(0, 1); glVertex2f(-1, 1);
+    glEnd();
+    glMatrixMode(GL_PROJECTION); glPopMatrix();
+    glMatrixMode(GL_MODELVIEW); glPopMatrix();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glPopAttrib();
+}
+
 static void render(int w, int h)
 {
     if (g_state == ST_FE3D) { fe_vm_scene_lerp(&g_vm, &g_fesc, g_fe_alpha); fe_gl_render(&g_fe, &g_fesc, w, h); return; }
@@ -1236,7 +1329,7 @@ static void cfg_load(void)
         else if (!strcmp(k, "quick_continue")) g_cfg.quick_cont = v != 0;
         else if (!strcmp(k, "challenger")) g_cfg.challenger = v != 0;
         else if (!strcmp(k, "window_w")) g_cfg.win_w = v < 320 ? 320 : v > 16384 ? 16384 : v;
-        else if (!strcmp(k, "window_h")) g_cfg.win_h = v < 240 ? 240 : v > 16384 ? 16384 : v;
+        else if (!strcmp(k, "window_h")) g_cfg.win_h = v < 200 ? 200 : v > 16384 ? 16384 : v;
         else if (!strcmp(k, "fullscreen_w")) g_cfg.fs_w = v < 0 ? 0 : v > 16384 ? 16384 : v;
         else if (!strcmp(k, "fullscreen_h")) g_cfg.fs_h = v < 0 ? 0 : v > 16384 ? 16384 : v;
         else if (!strcmp(k, "input_buffer")) g_cfg.input_buffer = v < 0 ? 0 : v > 12 ? 12 : v;
@@ -1285,7 +1378,7 @@ static void res_apply(void)
     if (g_cfg.fullscreen) {
         if (exclusive) {
             SDL_DisplayMode want = { 0, g_cfg.fs_w, g_cfg.fs_h, 0, NULL }, closest;
-            if (SDL_GetClosestDisplayMode(res_display(), &want, &closest)) {
+            if (SDL_GetClosestDisplayMode(res_display(), &want, &closest) && closest.w == g_cfg.fs_w && closest.h == g_cfg.fs_h) {
                 if (cur && (g_fs_applied_w != g_cfg.fs_w || g_fs_applied_h != g_cfg.fs_h)) {
                     SDL_SetWindowFullscreen(g_win, 0);              /* leave first so that the new mode is really set */
                     cur = 0;
@@ -1293,10 +1386,15 @@ static void res_apply(void)
                 SDL_SetWindowDisplayMode(g_win, &closest);
             } else exclusive = 0;
         }
+        /* a resolution the display cannot switch to (e.g. 320 x 200): borderless fullscreen, the game is drawn at
+         * that size into an off-screen buffer and scaled up with sharp pixels, keeping its shape */
+        g_lowres_w = (!exclusive && g_cfg.fs_w > 0 && g_cfg.fs_h > 0) ? g_cfg.fs_w : 0;
+        g_lowres_h = g_lowres_w ? g_cfg.fs_h : 0;
         Uint32 want_fs = exclusive ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_FULLSCREEN_DESKTOP;
         if (cur != want_fs) SDL_SetWindowFullscreen(g_win, want_fs);
         g_fs_applied_w = exclusive ? g_cfg.fs_w : 0; g_fs_applied_h = exclusive ? g_cfg.fs_h : 0;
     } else {
+        g_lowres_w = g_lowres_h = 0;
         if (cur) SDL_SetWindowFullscreen(g_win, 0);
         int w, h; SDL_GetWindowSize(g_win, &w, &h);
         if (w != g_cfg.win_w || h != g_cfg.win_h) {
@@ -1307,7 +1405,7 @@ static void res_apply(void)
     }
 }
 
-static const int k_win_sizes[][2] = { { 640, 480 }, { 800, 600 }, { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 960 },
+static const int k_win_sizes[][2] = { { 320, 200 }, { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 400 }, { 640, 480 }, { 800, 600 }, { 960, 720 }, { 1024, 768 }, { 1280, 720 }, { 1280, 960 },
     { 1600, 900 }, { 1600, 1200 }, { 1920, 1080 }, { 1920, 1440 }, { 2560, 1440 }, { 3840, 2160 } };
 
 /* the list for the current mode: the window sizes that fit the screen, or [desktop] + the display modes */
@@ -1319,10 +1417,16 @@ static int res_list(int fullscreen, int out[][2], int max)
         int di = res_display(), nm = SDL_GetNumDisplayModes(di);
         for (int i = 0; i < nm && n < max; i++) {
             SDL_DisplayMode m;
-            if (SDL_GetDisplayMode(di, i, &m) != 0 || m.w < 640 || m.h < 480) continue;
+            if (SDL_GetDisplayMode(di, i, &m) != 0 || m.w < 320 || m.h < 200) continue;
             int dup = 0;
             for (int j = 1; j < n; j++) if (out[j][0] == m.w && out[j][1] == m.h) dup = 1;
             if (!dup) { out[n][0] = m.w; out[n][1] = m.h; n++; }
+        }
+        static const int LOW[][2] = { { 320, 200 }, { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 400 }, { 640, 480 } };
+        for (size_t k = 0; k < sizeof LOW / sizeof LOW[0] && n < max; k++) {    /* low resolutions: scaled if the display has no such mode */
+            int dup = 0;
+            for (int j = 1; j < n; j++) if (out[j][0] == LOW[k][0] && out[j][1] == LOW[k][1]) dup = 1;
+            if (!dup) { out[n][0] = LOW[k][0]; out[n][1] = LOW[k][1]; n++; }
         }
         for (int i = 1; i < n; i++)                                 /* ascending by pixel count */
             for (int j = i + 1; j < n; j++)
@@ -2786,7 +2890,7 @@ int main(int argc, char **argv)
         if (!getenv("FX_AUTOTEST") && (!is_shot || getenv("FX_PREFDIR"))) cfg_load();
         for (int i = 1; i + 1 < argc; i++) {
             int w, h;
-            if (!strcmp(argv[i], "--size") && sscanf(argv[i + 1], "%dx%d", &w, &h) == 2 && w >= 320 && h >= 240 && w <= 16384 && h <= 16384) {
+            if (!strcmp(argv[i], "--size") && sscanf(argv[i + 1], "%dx%d", &w, &h) == 2 && w >= 320 && h >= 200 && w <= 16384 && h <= 16384) {
                 g_cfg.win_w = w; g_cfg.win_h = h;
             }
         }
@@ -2805,6 +2909,7 @@ int main(int argc, char **argv)
     SDL_GLContext ctx = SDL_GL_CreateContext(win);
     if (!ctx) { fprintf(stderr, "GL: %s\n", SDL_GetError()); return 1; }
     SDL_GL_SetSwapInterval(1);
+    if (!getenv("FX_AUTOTEST")) SDL_RaiseWindow(win);            /* to the front, also when started by the launcher */
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
@@ -2899,6 +3004,7 @@ int main(int argc, char **argv)
     Uint64 last = SDL_GetPerformanceCounter();
     double acc = 0;
     int running = 1, dragging = 0, title_cnt = 0;
+    if (!getenv("FX_AUTOTEST") && !shot) SDL_RaiseWindow(win);   /* loading is done: make sure the game has the focus */
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -3044,7 +3150,7 @@ int main(int argc, char **argv)
         } else { acc = 0; if (!g_paused) { g_f[0].time += (float)dt; g_f[1].time += (float)dt; } update_camera((float)dt, 0); }
         int w, h;
         SDL_GL_GetDrawableSize(win, &w, &h);
-        render(w, h);
+        render_frame(w, h);
         SDL_GL_SwapWindow(win);
         if (!g_cfg.vsync) SDL_Delay(1);
     }
