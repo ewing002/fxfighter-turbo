@@ -314,9 +314,10 @@ static void update_status(void)
     wchar_t p[MAX_PATH];
     swprintf(p, MAX_PATH, L"%lsFIGHT.EXE", dir); int exe = file_exists(p);
     int music = 0, video = 0;
-    const wchar_t *mdir[] = { L"%lsmusic\\track03.mp3", L"%lsport\\music\\track03.mp3", L"%ls..\\music\\track03.mp3" };
-    for (int i = 0; i < 3; i++) { swprintf(p, MAX_PATH, mdir[i], dir); if (file_exists(p)) music = 1; }
-    for (int i = 0; i < 3; i++) { swprintf(p, MAX_PATH, mdir[i], g_exe_dir); if (file_exists(p)) music = 1; }
+    const wchar_t *mdir[] = { L"%lsmusic\\track03.ogg", L"%lsmusic\\track03.mp3", L"%lsport\\music\\track03.ogg", L"%lsport\\music\\track03.mp3",
+                              L"%ls..\\music\\track03.ogg", L"%ls..\\music\\track03.mp3" };
+    for (int i = 0; i < 6; i++) { swprintf(p, MAX_PATH, mdir[i], dir); if (file_exists(p)) music = 1; }
+    for (int i = 0; i < 6; i++) { swprintf(p, MAX_PATH, mdir[i], g_exe_dir); if (file_exists(p)) music = 1; }
     const wchar_t *vdir[] = { L"%lsvideo\\fxintro.brp", L"%lsport\\video\\fxintro.brp", L"%lsFIGHT\\VIDEO\\fxintro.brp", L"%ls..\\video\\fxintro.brp" };
     for (int i = 0; i < 4; i++) { swprintf(p, MAX_PATH, vdir[i], dir); if (file_exists(p)) video = 1; }
     for (int i = 0; i < 4; i++) { swprintf(p, MAX_PATH, vdir[i], g_exe_dir); if (file_exists(p)) video = 1; }

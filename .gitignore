@@ -3,6 +3,7 @@ fight_decomp.c
 *.PAC
 *.pac
 *.mp3
+*.ogg
 *.brp
 *.BRP
 *.clt

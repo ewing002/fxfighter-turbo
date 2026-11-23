@@ -7,7 +7,7 @@
 #include "assets.h"
 
 /* opens the audio device; music_dirs: candidate directories (with trailing separator)
- * that may contain trackNN.mp3 (optional) */
+ * that may contain trackNN.ogg or trackNN.mp3 (optional) */
 int  audio_init(const Pac *pac, const char *const *music_dirs, int ndirs);
 void audio_shutdown(void);
 
@@ -16,6 +16,7 @@ void music_stop(void);
 void music_toggle(void);
 void music_volume(float delta);
 int  music_available(void);
+int  music_playing(void);          /* a track is open and playing (Ogg Vorbis or MP3) */
 void music_set_volume(float v);    /* 0..1 */
 float music_get_volume(void);
 void sfx_set_volume(float v);

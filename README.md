@@ -19,9 +19,10 @@ Your own copy of the original game is needed. Put the files below in the folder 
 - `FIGHT.EXE` – **required for the menus**, and it must be in the same folder as `FIGHT.PAC`. The original 3D menu scripts are read from its
   `.data` section at run time and executed by the port's script VM. Without it the program shows an error and exits.
   A fight without menus works without it: `fxfighter FIGHT.PAC --p1 N --p2 N`.
-- `music/trackNN.mp3` – optional. CD audio tracks `track02.mp3` … `track14.mp3`. Without them the game runs silently (sound effects still play).
-  Make them from your CD image (BIN + CUE) with `tools/rip_cd.py`, which needs Python 3 and `ffmpeg` (with `libmp3lame`) on the `PATH`
-  (see [Music](#music)). The program uses the first of these folders that contains `track03.mp3`:
+- `music/trackNN.ogg` (Ogg Vorbis) or `music/trackNN.mp3` – optional. CD audio tracks `track02` … `track14`, 44.1 kHz. If both exist for a track, the
+  Ogg file is used; `track_NN.ogg` is accepted too. Without any the game runs silently (sound effects still play).
+  Make them from your CD image (BIN + CUE) with `tools/rip_cd.py`, which needs Python 3 and `ffmpeg` (with `libvorbis` for Ogg, `libmp3lame` for MP3)
+  on the `PATH` (see [Music](#music)). The program uses the first of these folders that contains `track03.ogg` or `track03.mp3`:
   `music/` next to the executable, `../music/` relative to the executable, `port/music/` and `music/` next to `FIGHT.PAC`,
   `music/` and `../music/` relative to the working directory.
   Track meaning: 2 = credits, 3–13 = the arenas (arena number + 2), 14 = attract (demo) mode.
@@ -41,7 +42,7 @@ FXFighter/
   FIGHT.PAC         (from the original game)
   FIGHT.EXE         (from the original game)
   music/            (optional)
-    track02.mp3 … track14.mp3
+    track02.ogg … track14.ogg   (or .mp3)
   video/            (optional)
     *.brp, *.clt, *.pal
 ```
@@ -70,7 +71,7 @@ Settings the launcher does not show are kept as they are, so it works together w
   feet do not sink into the ground
 - **Camera from the EXE**: low view that depends on the distance between the fighters, 45° field of view, camera presets tied to moves
   (throws, victory); the background scrolls like the original
-- **Music**: the CD audio tracks as MP3 (`music/trackNN.mp3`), one original track per arena (arena + 2)
+- **Music**: the CD audio tracks as Ogg Vorbis or MP3 (`music/trackNN.ogg` / `.mp3`), one original track per arena (arena + 2)
 - **Sound effects**: the original `.asf` samples (bit-exact DPCM decoder), fighter, arena and announcer banks (`.fxl`), sounds tied to moves
 - **Menus and HUD with the original graphics**: loading screen, main menu, character select with portraits, arena select (2 players),
   VS screen with announcer, ROUND / FIGHT! / KO / RING OUT! / TIME OVER / WINNER / YOU WIN / YOU LOSE / GAME OVER captions,
@@ -179,12 +180,14 @@ The files are written in lower case (`*.brp`, `*.clt`, `*.pal`). Put the `video`
 [Requirements](#requirements). If a video is missing it is skipped. Esc skips the whole sequence, any other button only the current video.
 
 ## Music
-The game originally played CD audio tracks. `tools/rip_cd.py` makes MP3 files (192 kbit/s) from the CD image (BIN + CUE). It needs Python 3 and
-`ffmpeg` with `libmp3lame` on the `PATH`:
+The game originally played CD audio tracks. `tools/rip_cd.py` makes Ogg Vorbis files (quality 6) from the CD image (BIN + CUE); add `mp3` as a last
+argument for MP3 (192 kbit/s) instead. It needs Python 3 and `ffmpeg` with `libvorbis` (or `libmp3lame`) on the `PATH`:
 ```
 python3 tools/rip_cd.py "FX Fighter Turbo.cue" "FX Fighter Turbo.bin" music
+python3 tools/rip_cd.py "FX Fighter Turbo.cue" "FX Fighter Turbo.bin" music mp3
 ```
-It writes `trackNN.mp3` for every audio track. The folders searched are listed under [Requirements](#requirements). Without music the game runs silently.
+It writes `trackNN.ogg` (or `.mp3`) for every audio track. Any other tool works too, as long as the files are 44.1 kHz and named like that.
+A track that is not 44.1 kHz is skipped (a message is printed to the console). The folders searched are listed under [Requirements](#requirements). Without music the game runs silently.
 Tracks: 2 = credits, 3–13 = the arenas (arena + 2), 14 = attract mode.
 
 ## Building
@@ -216,7 +219,7 @@ The CI workflow `.github/workflows/build.yml` produces the Windows build (`fxfig
 - `src/sprfx.[ch]`: the fight's sprite effects (`fight/sfx/*.slb`: sparks, blood, move effects, teleport)
 - `src/fe3d*.[ch]`: the 3D menu (assets, script VM, renderer)
 - `src/video.[ch]`: the FMV (`.brp`) player
-- `src/audio.[ch]`, `src/dr_mp3.h`: music (MP3, dr_mp3 v0.7.2, public domain / MIT-0), the sound effect mixer and the `.asf` decoder
+- `src/audio.[ch]`, `src/dr_mp3.h`, `src/stb_vorbis.c`: music (MP3 with dr_mp3 v0.7.2, Ogg Vorbis with stb_vorbis 1.22; both public domain / MIT-0), the sound effect mixer and the `.asf` decoder
 - `tests/fightsim.c`: headless fight simulation (two CPU players), for regression tests
 - `tests/fecheck.c`, `tests/fevm.c`, `tests/brpcheck.c`: front end asset check, script VM test, video decoder check
 - `tools/*.py`: Python tools (unpacking, dumps, format research, `rip_cd.py`, `rip_video.py`)

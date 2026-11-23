@@ -8,6 +8,8 @@
  */
 #define DR_MP3_IMPLEMENTATION
 #include "dr_mp3.h"
+#define STB_VORBIS_NO_PUSHDATA_API
+#include "stb_vorbis.c"            /* Ogg Vorbis music (public domain), tried before MP3 */
 #include "audio.h"
 #include <SDL.h>
 #include <stdio.h>
@@ -149,6 +151,7 @@ static void voice_start(Voice *vc, const Sample *s)
 }
 static SDL_AudioDeviceID g_dev;
 static drmp3 g_mp3;
+static stb_vorbis *g_ogg;                     /* the open Ogg track, or NULL when the track is an MP3 */
 static int   g_mopen, g_track = -1, g_music_on = 1, g_sfx_on = 1;
 static float g_mvol = 0.6f, g_svol = 0.9f;
 static char  g_dir[1024];
@@ -167,10 +170,15 @@ static void SDLCALL audio_cb(void *ud, Uint8 *stream, int len)
     if (g_mopen && g_music_on) {
         int done = 0;
         while (done < frames) {
-            drmp3_uint64 got = drmp3_read_pcm_frames_s16(&g_mp3, (drmp3_uint64)(frames - done), out + done * 2);
+            drmp3_uint64 got;
+            if (g_ogg) got = (drmp3_uint64)stb_vorbis_get_samples_short_interleaved(g_ogg, 2, out + done * 2, (frames - done) * 2);
+            else got = drmp3_read_pcm_frames_s16(&g_mp3, (drmp3_uint64)(frames - done), out + done * 2);
             if (got == 0) {                       /* loop like the CD player's auto repeat */
-                if (!drmp3_seek_to_pcm_frame(&g_mp3, 0)) break;
-                got = drmp3_read_pcm_frames_s16(&g_mp3, (drmp3_uint64)(frames - done), out + done * 2);
+                if (g_ogg) { if (!stb_vorbis_seek_start(g_ogg)) break; got = (drmp3_uint64)stb_vorbis_get_samples_short_interleaved(g_ogg, 2, out + done * 2, (frames - done) * 2); }
+                else {
+                    if (!drmp3_seek_to_pcm_frame(&g_mp3, 0)) break;
+                    got = drmp3_read_pcm_frames_s16(&g_mp3, (drmp3_uint64)(frames - done), out + done * 2);
+                }
                 if (got == 0) break;
             }
             done += (int)got;
@@ -260,6 +268,16 @@ void sfx_play(int bank, int index)
 
 static int file_exists(const char *p) { FILE *f = fopen(p, "rb"); if (f) fclose(f); return f != NULL; }
 
+/* the open music file is closed with the audio device locked (or not yet running) */
+static void music_close_locked(void)
+{
+    if (g_ogg) { stb_vorbis_close(g_ogg); g_ogg = NULL; g_mopen = 0; }
+    else if (g_mopen) { drmp3_uninit(&g_mp3); g_mopen = 0; }
+}
+
+/* file names of a track, in the order they are tried: Ogg Vorbis first, then MP3 */
+static const char *const TRACK_FMT[] = { "%strack%02d.ogg", "%strack_%02d.ogg", "%strack%02d.mp3" };
+
 int audio_init(const Pac *pac, const char *const *dirs, int ndirs)
 {
     g_pac = pac;
@@ -268,11 +286,15 @@ int audio_init(const Pac *pac, const char *const *dirs, int ndirs)
     for (int i = 0; i < ndirs; i++) {
         if (!dirs[i]) continue;
         char p[1100];
-        snprintf(p, sizeof p, "%strack03.mp3", dirs[i]);
-        if (file_exists(p)) { snprintf(g_dir, sizeof g_dir, "%s", dirs[i]); break; }
+        int found = 0;
+        for (size_t f = 0; f < sizeof TRACK_FMT / sizeof TRACK_FMT[0] && !found; f++) {
+            snprintf(p, sizeof p, TRACK_FMT[f], dirs[i], 3);
+            found = file_exists(p);
+        }
+        if (found) { snprintf(g_dir, sizeof g_dir, "%s", dirs[i]); break; }
     }
     if (g_dir[0]) printf("music: using %s\n", g_dir);
-    else printf("music: no music/trackNN.mp3 found (optional)\n");
+    else printf("music: no music/trackNN.ogg or trackNN.mp3 found (optional)\n");
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) { printf("audio: %s\n", SDL_GetError()); return 0; }
     SDL_AudioSpec want, have;
     memset(&want, 0, sizeof want);
@@ -288,13 +310,26 @@ void music_play(int track)
 {
     if (!g_dev || !g_dir[0] || track == g_track) return;
     char p[1100];
-    snprintf(p, sizeof p, "%strack%02d.mp3", g_dir, track);
     SDL_LockAudioDevice(g_dev);
-    if (g_mopen) { drmp3_uninit(&g_mp3); g_mopen = 0; }
+    music_close_locked();
     g_track = track;
-    if (drmp3_init_file(&g_mp3, p, NULL)) {
-        if (g_mp3.sampleRate != 44100 || g_mp3.channels != 2) drmp3_uninit(&g_mp3);   /* CD rips: 44.1k stereo */
-        else g_mopen = 1;
+    for (size_t f = 0; f < sizeof TRACK_FMT / sizeof TRACK_FMT[0] && !g_mopen; f++) {
+        snprintf(p, sizeof p, TRACK_FMT[f], g_dir, track);
+        if (!file_exists(p)) continue;
+        if (f < 2) {                                      /* Ogg Vorbis: 44.1 kHz, any channel count is mixed to stereo */
+            int err = 0;
+            stb_vorbis *v = stb_vorbis_open_filename(p, &err, NULL);
+            if (!v) { printf("music: cannot read %s (Vorbis error %d)\n", p, err); continue; }
+            if (stb_vorbis_get_info(v).sample_rate != 44100) {
+                printf("music: %s is not 44.1 kHz, skipped\n", p);
+                stb_vorbis_close(v);
+                continue;
+            }
+            g_ogg = v; g_mopen = 1;
+        } else if (drmp3_init_file(&g_mp3, p, NULL)) {
+            if (g_mp3.sampleRate != 44100 || g_mp3.channels != 2) drmp3_uninit(&g_mp3);   /* CD rips: 44.1k stereo */
+            else g_mopen = 1;
+        }
     }
     SDL_UnlockAudioDevice(g_dev);
 }
@@ -303,7 +338,7 @@ void music_stop(void)
 {
     if (!g_dev) return;
     SDL_LockAudioDevice(g_dev);
-    if (g_mopen) { drmp3_uninit(&g_mp3); g_mopen = 0; }
+    music_close_locked();
     g_track = -1;
     SDL_UnlockAudioDevice(g_dev);
 }
@@ -320,6 +355,7 @@ float music_get_volume(void) { return g_mvol; }
 void sfx_set_volume(float v) { g_svol = v < 0 ? 0 : v > 1 ? 1 : v; }
 float sfx_get_volume(void) { return g_svol; }
 int  music_available(void) { return g_dev && g_dir[0]; }
+int  music_playing(void) { return g_mopen; }
 void sfx_toggle(void) { g_sfx_on = !g_sfx_on; }
 int  sfx_enabled(void) { return g_sfx_on; }
 
@@ -328,7 +364,7 @@ void audio_shutdown(void)
     if (!g_dev) return;
     SDL_CloseAudioDevice(g_dev);
     g_dev = 0;
-    if (g_mopen) { drmp3_uninit(&g_mp3); g_mopen = 0; }
+    music_close_locked();
     for (int i = 0; i < g_nsamples; i++) free(g_samples[i].pcm);
     g_nsamples = 0;
 }

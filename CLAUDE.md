@@ -5,13 +5,13 @@ A rewrite of the original Windows game FX Fighter Turbo for modern systems. New 
 Documentation, code comments, commit messages and communication are in English.
 
 ## Status
-- **Done:** asset loading (models, textures, arenas, animations), fight engine (punches, block, throw, jump, ring-out, rounds, timer), audio (CD music as MP3, ASF effects, banks, announcer), 3D camera with parameters recovered from the EXE, HUD with the original sprites, main menu, loading screen, character and arena select, VS screen, 3-round match, 1-player ladder (the original order table), computer opponent (the original AI, `0x425892`), controller support, OPTIONS menu with difficulty level, saved settings.
+- **Done:** asset loading (models, textures, arenas, animations), fight engine (punches, block, throw, jump, ring-out, rounds, timer), audio (CD music as Ogg Vorbis or MP3, ASF effects, banks, announcer), 3D camera with parameters recovered from the EXE, HUD with the original sprites, main menu, loading screen, character and arena select, VS screen, 3-round match, 1-player ladder (the original order table), computer opponent (the original AI, `0x425892`), controller support, OPTIONS menu with difficulty level, saved settings.
 - **Not tried live:** on real Windows hardware with a real controller. Tests ran on Linux, in Xvfb and with the headless simulator.
 
 ## Layout
 - `src/assets.[ch]` – PAC, CMP, pixmap, model, material, ANI loading
 - `src/fight.[ch]` – fight engine (movement, hits, state machine)
-- `src/audio.[ch]` – sound mixer, ASF decoder, music (`dr_mp3.h`)
+- `src/audio.[ch]` – sound mixer, ASF decoder, music (`dr_mp3.h`, `stb_vorbis.c`; Ogg is tried before MP3, `tests/audiocheck.c` checks loading silently with `SDL_AUDIODRIVER=dummy`)
 - `src/ui.[ch]` – the fight's 2D sprites (boutgfx), 640×480 virtual screen
 - `src/sprfx.[ch]` – sprite effects (`fight/sfx/*.slb`): block sparks, blood, move effects, teleport
 - `src/video.[ch]` – FMV (`.brp`) player
@@ -29,7 +29,7 @@ Documentation, code comments, commit messages and communication are in English.
 - The repository contains no binaries. Windows builds come from the GitHub Actions workflow `.github/workflows/build.yml` (`fxfighter.exe` + `SDL2.dll`).
 
 ## Reference material (not part of the repo)
-These must be supplied locally; the `.gitignore` excludes `fight_decomp.c`, `*.PAC`, `*.mp3` and `video/`.
+These must be supplied locally; the `.gitignore` excludes `fight_decomp.c`, `*.PAC`, `*.mp3`, `*.ogg` and `video/`.
 - The original `FIGHT.EXE` and `FIGHT.PAC` – from the original game folder. `FIGHT.PAC` is needed to run, `FIGHT.EXE` is needed for the 3D menus (and for `fecheck`).
 - `fight_decomp.c` – Ghidra export (decompiled C) of `FIGHT.EXE`, for looking up functions. If you do not have it, `docs/FORMATS.md` and the code comments are the primary source.
 - Unpacked data – `tools/unpac.py` produces it from `FIGHT.PAC`.
