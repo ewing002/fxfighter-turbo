@@ -50,6 +50,15 @@ FXFighter/
 its artifact (or the release zip) contains `fxfighter.exe` and `SDL2.dll`. Unpack them next to your game files as shown above. You can also
 [build it yourself](#building).
 
+## Launcher
+`fxfighter-launcher.exe` (Windows, next to `fxfighter.exe`) is a small settings window, so nobody has to edit `options.cfg` by hand. It opens in the
+middle of the desktop and has four tabs: **Display and sound** (fullscreen, vsync, window size, fullscreen resolution, music and effects volume),
+**Gameplay** (rounds, round time, CPU difficulty, game speed, handicaps, ring-outs, ring guard, challenger, quick CONTINUE, rumble, input buffer),
+**Controls** (click a key button, then press the new key) and **Detail** (textures, shading, floor, background).
+`FIGHT.PAC` is found automatically (next to the launcher, one or two folders up) or chosen with **Browse ...**; the status line shows whether
+`FIGHT.EXE`, the music and the videos are found. **Save** writes `options.cfg`, **Play** saves and starts the game with the chosen `FIGHT.PAC`.
+Settings the launcher does not show are kept as they are, so it works together with the in-game menus and hotkeys.
+
 ## Status
 ### Milestone 3 – complete gameplay with menus
 - Reading of the `FIGHT.PAC` archive, RLE textures, palettes, BRender models, materials and pixmaps

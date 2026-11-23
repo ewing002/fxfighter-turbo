@@ -1,5 +1,5 @@
 # Builds the Windows program on every push and, for a tag like v1.0, publishes it as a GitHub Release.
-# The release zip holds only fxfighter.exe, SDL2.dll and the README (no game data: the user supplies FIGHT.PAC and FIGHT.EXE).
+# The release zip holds only fxfighter.exe, fxfighter-launcher.exe, SDL2.dll and the README (no game data: the user supplies FIGHT.PAC and FIGHT.EXE).
 name: build
 
 on:
@@ -39,6 +39,7 @@ jobs:
         run: |
           mkdir -p dist/FXFighterTurbo
           cp build/fxfighter.exe dist/FXFighterTurbo/
+          cp build/fxfighter-launcher.exe dist/FXFighterTurbo/
           cp /mingw64/bin/SDL2.dll dist/FXFighterTurbo/
           cp README.md dist/FXFighterTurbo/
 
