@@ -19,7 +19,7 @@ Documentation, code comments, commit messages and communication are in English.
 - `src/fe3d.[ch]` – the 3D front end: scene assets and the script bytecode from `FIGHT.EXE` (see `docs/FRONTEND.md`)
 - `src/fe3d_gl.[ch]` – renderer of the 3D front end (background, two parallel side views, main perspective view)
 - `src/fe3d_vm.[ch]` – script VM of the 3D front end (runs the original bytecode; test: `tests/fevm.c`)
-- `launcher/launcher.c` – Windows settings launcher (plain Win32, no SDL): edits `options.cfg` (all keys, unknown lines are kept), starts `fxfighter.exe` with the chosen `FIGHT.PAC`; centered on the primary work area. Target `fxfighter-launcher`.
+- `launcher/launcher.c` – Windows settings launcher (plain Win32, no SDL): edits `options.cfg` (all keys, unknown lines are kept), starts `fxfighter.exe` with the chosen `FIGHT.PAC`; centered on the primary work area, forces itself to the foreground. Auto start (launcher rule for all ports): Play after `autostart` seconds (launcher.cfg, default 10, Off/3..60) without input; 1 s grace, then cursor movement > 4 px or a held key/button cancels (GetCursorPos + GetAsyncKeyState, 100 ms timer; `FX_LAUNCHER_TEST=1` disables the input check). Target `fxfighter-launcher`.
 - `tests/fecheck.c` – check of the front end assets
 - `tests/fightsim.c` – headless CPU-vs-CPU simulation
 - `tests/brpcheck.c` – video decoder check

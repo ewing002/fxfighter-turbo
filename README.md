@@ -59,6 +59,9 @@ middle of the desktop and has four tabs: **Display and sound** (fullscreen, vsyn
 `FIGHT.PAC` is found automatically (next to the launcher, one or two folders up) or chosen with **Browse ...**; the status line shows whether
 `FIGHT.EXE`, the music and the videos are found. **Save** writes `options.cfg`, **Play** saves and starts the game with the chosen `FIGHT.PAC`.
 Settings the launcher does not show are kept as they are, so it works together with the in-game menus and hotkeys.
+**Auto start:** if you do not touch the mouse or the keyboard, the launcher presses Play by itself after 10 seconds; the countdown is shown on
+the Play button, and any input (moving the mouse, a key or a click) stops it. The delay is set next to the buttons (Off, 3 ... 60 seconds) and
+saved in `launcher.cfg` (`autostart=N`, in the same folder as `options.cfg`). The launcher comes to the front when it starts.
 
 ## Status
 ### Milestone 3 – complete gameplay with menus

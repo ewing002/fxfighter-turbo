@@ -106,15 +106,24 @@ static int cfg_save(void)
     return 1;
 }
 
-/* launcher's own setting: which FIGHT.PAC to use */
+/* the launcher's own settings (launcher.cfg): which FIGHT.PAC to use, and the auto start delay */
+static const int AUTO_CHOICES[] = { 0, 3, 5, 10, 15, 20, 30, 60 };          /* seconds, 0 = off */
+#define N_AUTO ((int)(sizeof AUTO_CHOICES / sizeof AUTO_CHOICES[0]))
+static int g_auto_secs = 10;                    /* default: start the game after 10 s without input */
+
 static void pac_load(void)
 {
     wchar_t p[MAX_PATH]; pref_path(p, L"launcher.cfg");
     FILE *f = _wfopen(p, L"rb");
     if (f) {
-        char b[2 * MAX_PATH]; size_t n = fread(b, 1, sizeof b - 1, f); fclose(f); b[n] = 0;
-        char *e = b + strlen(b); while (e > b && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
-        if (!strncmp(b, "pac=", 4)) MultiByteToWideChar(CP_UTF8, 0, b + 4, -1, g_pac, MAX_PATH);
+        char line[2 * MAX_PATH];
+        while (fgets(line, sizeof line, f)) {
+            char *e = line + strlen(line); while (e > line && (e[-1] == '\n' || e[-1] == '\r')) *--e = 0;
+            int v;
+            if (!strncmp(line, "pac=", 4)) MultiByteToWideChar(CP_UTF8, 0, line + 4, -1, g_pac, MAX_PATH);
+            else if (sscanf(line, "autostart=%d", &v) == 1 && v >= 0 && v <= 600) g_auto_secs = v;
+        }
+        fclose(f);
     }
     if (g_pac[0] && GetFileAttributesW(g_pac) != INVALID_FILE_ATTRIBUTES) return;
     g_pac[0] = 0;
@@ -132,7 +141,7 @@ static void pac_save(void)
     if (!f) return;
     char u[2 * MAX_PATH];
     WideCharToMultiByte(CP_UTF8, 0, g_pac, -1, u, sizeof u, NULL, NULL);
-    fprintf(f, "pac=%s\n", u);
+    fprintf(f, "pac=%s\nautostart=%d\n", u, g_auto_secs);
     fclose(f);
 }
 
@@ -145,6 +154,7 @@ enum {
     ID_ROUNDS, ID_ROUNDTIME, ID_DIFF, ID_SPEED, ID_HC1, ID_HC2,
     ID_RINGOUTS, ID_RINGGUARD, ID_CHALLENGER, ID_QUICK, ID_RUMBLE, ID_IBUF,
     ID_KEYRESET, ID_DET_P1TEX, ID_DET_P1SHADE, ID_DET_P2TEX, ID_DET_P2SHADE, ID_DET_FLOORTEX, ID_DET_FLOOR, ID_DET_BG,
+    ID_AUTO, ID_AUTOLBL,
     ID_KEY0 = 300,                         /* ID_KEY0 + 0..11: key buttons */
 };
 #define NPAGES 4
@@ -156,6 +166,14 @@ static HWND g_ctl[NPAGES][MAXCTL];
 static int  g_nctl[NPAGES];
 static int  g_page;
 static int  g_capture = -1;                /* key button waiting for a key press */
+/* auto start: after g_auto_secs without mouse or keyboard input the launcher presses Play by itself.
+ * The countdown is shown on the Play button. The first second is a grace period (the key or click that started
+ * the launcher does not count); after that a cursor movement of more than 4 px or any held key / mouse button
+ * cancels it. FX_LAUNCHER_TEST=1 turns the input check off for automated tests. */
+#define TIMER_AUTO   2
+#define GRACE_TICKS 10
+static int   g_countdown, g_auto_ticks, g_auto_sub;
+static POINT g_auto_pos;
 static int  g_dpi = 96;
 static HANDLE g_game_proc;                 /* the started game, while the launcher hands over the foreground */
 static DWORD  g_game_pid;
@@ -348,8 +366,10 @@ static int do_save(int quiet)
     return 1;
 }
 
+static void stop_countdown(void);
 static void do_play(void)
 {
+    stop_countdown();
     if (!g_pac[0]) { MessageBoxW(g_wnd, L"Select FIGHT.PAC first (Browse ...).", L"FX Fighter Turbo", MB_ICONINFORMATION); return; }
     if (!do_save(1)) return;
     wchar_t exe[MAX_PATH], cmd[2 * MAX_PATH + 8];
@@ -498,6 +518,8 @@ static void build_ui(void)
 
     /* buttons */
     mk(-1, L"BUTTON", L"Reset all", BS_PUSHBUTTON | WS_TABSTOP, 16, 508, 100, 30, ID_RESET);
+    mk(-1, L"STATIC", L"Auto start:", SS_LEFT, 128, 515, 70, 20, ID_AUTOLBL);
+    mk(-1, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 200, 511, 110, 300, ID_AUTO);
     mk(-1, L"BUTTON", L"Save", BS_PUSHBUTTON | WS_TABSTOP, 330, 508, 90, 30, ID_SAVE);
     mk(-1, L"BUTTON", L"Close", BS_PUSHBUTTON | WS_TABSTOP, 430, 508, 90, 30, ID_CLOSE);
     HWND play = mk(-1, L"BUTTON", L"Play", BS_DEFPUSHBUTTON | WS_TABSTOP, 530, 508, 94, 30, ID_PLAY);
@@ -525,6 +547,11 @@ static void fill_lists(void)
     for (int i = 1; i <= 8; i++) { wchar_t t[32]; swprintf(t, 32, i == 4 ? L"%d (default)" : L"%d", i); cb_add(ID_HC1, t, i); cb_add(ID_HC2, t, i); }
     for (int i = 0; i <= 12; i++) { wchar_t t[32]; swprintf(t, 32, i == 0 ? L"0 (original)" : i == 4 ? L"4 (default)" : L"%d", i); cb_add(ID_IBUF, t, i); }
     cb_add(ID_DET_FLOORTEX, L"Off", 0); cb_add(ID_DET_FLOORTEX, L"Textured", 1); cb_add(ID_DET_FLOORTEX, L"Perspective-correct", 2);
+    for (int i = 0; i < N_AUTO; i++) {
+        wchar_t t[32];
+        if (AUTO_CHOICES[i]) swprintf(t, 32, L"%d seconds", AUTO_CHOICES[i]); else wcscpy(t, L"Off");
+        cb_add(ID_AUTO, t, AUTO_CHOICES[i]);
+    }
     cb_add(ID_DET_FLOOR, L"None", 0); cb_add(ID_DET_FLOOR, L"Medium", 1); cb_add(ID_DET_FLOOR, L"High", 2);
 }
 
@@ -563,6 +590,38 @@ static void update_volume_labels(void)
     }
 }
 
+static void show_countdown(void)
+{
+    wchar_t t[32];
+    if (g_countdown > 0) swprintf(t, 32, L"Play (%d)", g_countdown); else wcscpy(t, L"Play");
+    SetWindowTextW(C(ID_PLAY), t);
+}
+
+static void stop_countdown(void)
+{
+    if (g_countdown > 0) { g_countdown = 0; KillTimer(g_wnd, TIMER_AUTO); show_countdown(); }
+}
+
+static int user_input(void)
+{
+    POINT p;
+    if (GetCursorPos(&p) && (abs(p.x - g_auto_pos.x) > 4 || abs(p.y - g_auto_pos.y) > 4)) return 1;
+    for (int vk = 1; vk < 255; vk++) if (GetAsyncKeyState(vk) & 0x8000) return 1;
+    return 0;
+}
+
+static void auto_tick(void)
+{
+    if (g_countdown <= 0) { KillTimer(g_wnd, TIMER_AUTO); return; }
+    if (g_auto_ticks < GRACE_TICKS) { g_auto_ticks++; GetCursorPos(&g_auto_pos); return; }
+    if (!getenv("FX_LAUNCHER_TEST") && user_input()) { stop_countdown(); return; }
+    if (++g_auto_sub >= 10) {
+        g_auto_sub = 0;
+        if (--g_countdown == 0) { KillTimer(g_wnd, TIMER_AUTO); show_countdown(); do_play(); return; }
+        show_countdown();
+    }
+}
+
 static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
 {
     switch (m) {
@@ -577,6 +636,12 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         return 0;
     case WM_COMMAND: {
         int id = LOWORD(w);
+        if (id != ID_PLAY) stop_countdown();
+        if (id == ID_AUTO && HIWORD(w) == CBN_SELCHANGE) {
+            int i = (int)SendMessageW(C(ID_AUTO), CB_GETCURSEL, 0, 0);
+            if (i >= 0 && i < N_AUTO) { g_auto_secs = AUTO_CHOICES[i]; pac_save(); }
+            return 0;
+        }
         if (g_capture >= 0 && !(id >= ID_KEY0 && id < ID_KEY0 + 12)) end_capture();
         if (id >= ID_KEY0 && id < ID_KEY0 + 12 && HIWORD(w) == BN_CLICKED) {
             end_capture();
@@ -593,7 +658,10 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT m, WPARAM w, LPARAM l)
         }
         return 0;
     }
-    case WM_TIMER: if (w == 1 && g_game_proc) game_wait_tick(); return 0;
+    case WM_TIMER:
+        if (w == 1 && g_game_proc) game_wait_tick();
+        else if (w == TIMER_AUTO) auto_tick();
+        return 0;
     case WM_CLOSE: DestroyWindow(h); return 0;
     case WM_DESTROY: PostQuitMessage(0); return 0;
     }
@@ -648,6 +716,23 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show)
     center_window(g_wnd);
     ShowWindow(g_wnd, SW_SHOW);
     UpdateWindow(g_wnd);
+    {   /* come to the front even when started from another program (attach to the foreground thread for the call) */
+        HWND fg = GetForegroundWindow();
+        DWORD me = GetCurrentThreadId(), ft = fg ? GetWindowThreadProcessId(fg, NULL) : 0;
+        if (ft && ft != me) AttachThreadInput(me, ft, TRUE);
+        BringWindowToTop(g_wnd);
+        SetForegroundWindow(g_wnd);
+        if (ft && ft != me) AttachThreadInput(me, ft, FALSE);
+    }
+    cb_select_data(ID_AUTO, g_auto_secs);
+    if (SendMessageW(C(ID_AUTO), CB_GETCURSEL, 0, 0) < 0 || cb_data(ID_AUTO, -1) != g_auto_secs) {   /* a value not in the list */
+        wchar_t t[32]; swprintf(t, 32, L"%d seconds", g_auto_secs);
+        cb_add(ID_AUTO, t, g_auto_secs); cb_select_data(ID_AUTO, g_auto_secs);
+    }
+    g_countdown = g_pac[0] ? g_auto_secs : 0;   /* without FIGHT.PAC there is nothing to start */
+    GetCursorPos(&g_auto_pos);
+    show_countdown();
+    if (g_countdown > 0) SetTimer(g_wnd, TIMER_AUTO, 100, NULL);
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0) > 0) {
